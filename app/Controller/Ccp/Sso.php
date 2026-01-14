@@ -623,4 +623,25 @@ class Sso extends Api\User{
     static function getSSOLogger() : \Log {
         return parent::getLogger('SSO');
     }
+
+    private function makeStandaloneToken(\Base $f3, int $characterId): array {
+    $ts = time();
+    $nonce = $this->b64url_encode(random_bytes(16));
+
+    $data = [
+        'ts' => $ts,
+        'nonce' => $nonce,
+        'cid' => $characterId,
+    ];
+
+    // 서명 대상 문자열(순서 고정)
+    $msg = $data['ts'] . '.' . $data['nonce'] . '.' . $data['cid'];
+
+    $secret = (string)$f3->get('ENV.PF_STANDALONE_SECRET'); // .env/ini로 주입 추천
+    $sig = hash_hmac('sha256', $msg, $secret, true);
+    $data['sig'] = $this->b64url_encode($sig);
+
+    return $data;
+}
+
 }
