@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Created by PhpStorm.
  * User: exodus4d
@@ -11,7 +12,8 @@ namespace Exodus4D\Pathfinder\Cron;
 
 use Exodus4D\Pathfinder\Model\Pathfinder;
 
-class CharacterUpdate extends AbstractCron {
+class CharacterUpdate extends AbstractCron
+{
 
     /**
      * default character_log time until a log entry get re-checked by cronjob
@@ -28,7 +30,8 @@ class CharacterUpdate extends AbstractCron {
      * @param \Base $f3
      * @return int
      */
-    protected function getCharacterLogInactiveTime(\Base $f3){
+    protected function getCharacterLogInactiveTime(\Base $f3)
+    {
         $logInactiveTime = (int)$f3->get('PATHFINDER.CACHE.CHARACTER_LOG_INACTIVE');
         return ($logInactiveTime >= 0) ? $logInactiveTime : self::CHARACTER_LOG_INACTIVE;
     }
@@ -40,7 +43,8 @@ class CharacterUpdate extends AbstractCron {
      * @param \Base $f3
      * @throws \Exception
      */
-    function deleteLogData(\Base $f3){
+    function deleteLogData(\Base $f3)
+    {
         $this->logStart(__FUNCTION__, false);
         $logInactiveTime = $this->getCharacterLogInactiveTime($f3);
 
@@ -61,26 +65,26 @@ class CharacterUpdate extends AbstractCron {
         $total = 0;
         $count = 0;
 
-        if(is_object($characterLogs)){
+        if (is_object($characterLogs)) {
             $total = count($characterLogs);
-            foreach($characterLogs as $characterLog){
+            foreach ($characterLogs as $characterLog) {
                 /**
                  * @var $characterLog Pathfinder\CharacterLogModel
                  */
-                if(is_object($characterLog->characterId)){
-                    if($accessToken = $characterLog->characterId->getAccessToken()){
-                        if($characterLog->characterId->isOnline($accessToken)){
+                if (is_object($characterLog->characterId)) {
+                    if ($accessToken = $characterLog->characterId->getAccessToken()) {
+                        if ($characterLog->characterId->isOnline($accessToken)) {
                             // force characterLog as "updated" even if no changes were made
                             $characterLog->touch('updated');
                             $characterLog->save();
-                        }else{
+                        } else {
                             $characterLog->erase();
                         }
-                    }else{
+                    } else {
                         // no valid $accessToken. (e.g. ESI is down; or invalid `refresh_token` found
                         $characterLog->erase();
                     }
-                }else{
+                } else {
                     // character_log does not have a character assigned -> delete
                     $characterLog->erase();
                 }
@@ -100,7 +104,8 @@ class CharacterUpdate extends AbstractCron {
      * @param \Base $f3
      * @throws \Exception
      */
-    function cleanUpCharacterData(\Base $f3){
+    function cleanUpCharacterData(\Base $f3)
+    {
         $this->logStart(__FUNCTION__, false);
 
         /**
@@ -113,8 +118,8 @@ class CharacterUpdate extends AbstractCron {
             ':active' => 1
         ]);
 
-        if(is_object($characters)){
-            foreach($characters as $character){
+        if (is_object($characters)) {
+            foreach ($characters as $character) {
                 /**
                  * @var $character Pathfinder\CharacterModel
                  */
@@ -133,7 +138,8 @@ class CharacterUpdate extends AbstractCron {
      * @param \Base $f3
      * @throws \Exception
      */
-    function deleteAuthenticationData(\Base $f3){
+    function deleteAuthenticationData(\Base $f3)
+    {
         $this->logStart(__FUNCTION__, false);
 
         /**
@@ -146,8 +152,8 @@ class CharacterUpdate extends AbstractCron {
             '(expires - NOW()) <= 0'
         ]);
 
-        if(is_object($authentications)){
-            foreach($authentications as $authentication){
+        if (is_object($authentications)) {
+            foreach ($authentications as $authentication) {
                 $authentication->erase();
             }
         }
@@ -155,4 +161,223 @@ class CharacterUpdate extends AbstractCron {
         $this->logEnd(__FUNCTION__);
     }
 
+    /**
+     * Update character location logs via ESI and push updates to websocket server.
+     * >> php index.php "/cron/updateCharacterLogs"
+     *
+     * 목적:
+     * - 웹 클라이언트(updateUserData)가 없더라도 서버가 주기적으로 updateLog()를 돌린다
+     * - updateLog 결과를 websocket(characterUpdate)으로 push해서 mapSubscriptions가 갱신되게 한다
+     */
+    function updateCharacterLogs(\Base $f3)
+    {
+        $this->logStart(__FUNCTION__, false);
+
+        // 너무 많은 ESI 호출 방지: 10계정이면 10~20도 OK, 필요시 조절
+        $max = (int)$f3->get('PATHFINDER.CACHE.CHARACTER_LOGS_REFRESH_MAX');
+        if ($max <= 0) $max = 20;
+
+        // 갱신 주기(초): 최근에 갱신된 캐릭터는 스킵
+        $refreshSec = (int)$f3->get('PATHFINDER.CACHE.CHARACTER_LOGS_REFRESH_SEC');
+        if ($refreshSec <= 0) $refreshSec = 60;
+
+        /** @var $characterModel \Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel */
+        $characterModel = \Exodus4D\Pathfinder\Model\Pathfinder\AbstractPathfinderModel::getNew('CharacterModel');
+
+        // logLocation 활성화 + active 캐릭터만
+        $characters = $characterModel->find([
+            'active = :active AND logLocation = :logLocation',
+            ':active' => 1,
+            ':logLocation' => 1
+        ], [
+            'order' => 'lastLogin DESC',
+            'limit' => $max
+        ]);
+
+        $total = is_object($characters) ? count($characters) : 0;
+        $count = 0;
+        $updated = 0;
+
+        if (is_object($characters)) {
+            foreach ($characters as $character) {
+                /** @var $character \Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel */
+                try {
+                    // basic scopes 없는 캐릭터는 스킵 (updateLog 내부에서도 걸리지만 비용 절약)
+                    if (!$character->hasBasicScopes()) {
+                        $count++;
+                        continue;
+                    }
+
+                    // 최근에 갱신된 로그면 스킵
+                    $log = $character->getLog();
+                    if ($log && !empty($log->updated)) {
+                        $age = time() - strtotime($log->updated);
+                        if ($age >= 0 && $age < $refreshSec) {
+                            $count++;
+                            continue;
+                        }
+                    }
+
+                    // markUpdated => 변화 없어도 updated touch (선택)
+                    $character->updateLog(['markUpdated' => true]);
+
+                    // ✅ websocket에 캐릭터 데이터 push (mapSubscriptions 갱신의 핵심)
+                    $character->broadcastCharacterUpdate();
+
+                    $updated++;
+                } catch (\Throwable $e) {
+                    // 개별 캐릭터 실패는 무시하고 다음 진행 (ESI 순간 오류/타임아웃 대비)
+                    // 필요하면 error_log($e->getMessage()) 정도만 남겨도 됨
+                }
+
+                $count++;
+            }
+        }
+
+        // logEnd는 기존 패턴에 맞춰서
+        $this->logEnd(__FUNCTION__, $total, $count, $updated);
+    }
+    function updateStandaloneTrackedLogs(\Base $f3)
+    {
+        $this->logStart(__FUNCTION__, false);
+
+        // ✅ presence 디렉토리 (너가 통일한 경로로 맞춰)
+        // 예: /var/www/html/pathfinder/tmp/pf  (공유 볼륨 아래)
+        $dir = '/var/www/html/pathfinder/tmp/pf';
+
+        $t0 = microtime(true);
+
+        $files = glob($dir . '/standalone_presence_map_*.json') ?: [];
+        $filesCount = count($files);
+
+        // helper: Map.php의 protected updateMapByCharacter() 호출 래퍼
+        $tracker = new class extends \Exodus4D\Pathfinder\Controller\Api\Map {
+            public function track(
+                \Exodus4D\Pathfinder\Model\Pathfinder\MapModel $map,
+                \Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel $character
+            ): \Exodus4D\Pathfinder\Model\Pathfinder\MapModel {
+
+                $positions = [
+                    'defaults' => [
+                        ['x' => 0,   'y' => 30],
+                        ['x' => 130, 'y' => 30],
+                    ],
+                    'location' => [],
+                ];
+
+                return $this->updateMapByCharacter($map, $character, $positions);
+            }
+        };
+
+        $charsTotal = 0;        // 파일에 들어있는 캐릭 총합
+        $charsProcessed = 0;    // 기본 조건 통과해서 실제로 updateLog/track 시도한 수
+        $updated = 0;           // updateLog+track+push 성공 수
+        $skippedExpired = 0;    // TTL 만료 파일
+        $errors = 0;
+
+        foreach ($files as $file) {
+            $raw = @file_get_contents($file);
+            if (!$raw) continue;
+
+            $p = json_decode($raw, true);
+            if (!is_array($p)) continue;
+
+            $mapId = (int)($p['mapId'] ?? 0);
+            $ts    = (int)($p['ts'] ?? 0);
+            $ttl   = (int)($p['ttl'] ?? 0);
+            $chars = $p['chars'] ?? [];
+
+            if ($mapId <= 0 || $ts <= 0 || $ttl <= 0 || !is_array($chars)) continue;
+
+            // TTL 만료면 스킵(유령 방지)
+            if (time() > ($ts + $ttl)) {
+                $skippedExpired++;
+                continue;
+            }
+
+            // map 로드
+            $map = \Exodus4D\Pathfinder\Model\Pathfinder\AbstractPathfinderModel::getNew('MapModel');
+            $map->getById($mapId);
+            if (!$map->valid()) continue;
+
+            foreach ($chars as $cid) {
+                // chars가 객체 배열일 수도 있으니 이것도 안전하게(구동만 위해 최소)
+                $cid = is_array($cid) ? (int)($cid['id'] ?? 0) : (int)$cid;
+                if ($cid <= 0) continue;
+
+                $charsTotal++;
+
+                try {
+                    $character = \Exodus4D\Pathfinder\Model\Pathfinder\AbstractPathfinderModel::getNew('CharacterModel');
+                    $character->getById($cid);
+                    if (!$character->valid()) {
+                        error_log("[daemon][char] id={$cid} skip=CHAR_NOT_FOUND");
+                        continue;
+                    }
+
+                    if (!$character->hasBasicScopes()) {
+                        error_log("[daemon][char] id={$cid} skip=NO_SCOPES");
+                        continue;
+                    }
+
+                    if (!$map->hasAccess($character)) {
+                        error_log("[daemon][char] id={$cid} skip=NO_ACCESS map={$mapId}");
+                        continue;
+                    }
+
+                    $charsProcessed++;
+
+                    // 1) 위치 갱신(ESI)
+                    try {
+                        $character->updateLog(['markUpdated' => true]);
+                    } catch (\Throwable $e) {
+                        error_log("[daemon][char] id={$cid} skip=UPDATELOG_FAIL msg=" . $e->getMessage());
+                        $errors++;
+                        continue;
+                    }
+
+                    // 2) 맵 트래킹
+                    try {
+                        $tracker->track($map, $character);
+                    } catch (\Throwable $e) {
+                        error_log("[daemon][char] id={$cid} skip=TRACK_FAIL msg=" . $e->getMessage());
+                        $errors++;
+                        continue;
+                    }
+
+                    // 3) WS 캐릭 업데이트 push
+                    try {
+                        $character->broadcastCharacterUpdate();
+                    } catch (\Throwable $e) {
+                        error_log("[daemon][char] id={$cid} skip=BROADCAST_FAIL msg=" . $e->getMessage());
+                        $errors++;
+                        continue;
+                    }
+
+                    $updated++;
+                } catch (\Throwable $e) {
+                    error_log("[daemon][char] id={$cid} skip=FATAL msg=" . $e->getMessage());
+                    $errors++;
+                    continue;
+                }
+            }
+        }
+
+        $elapsedMs = (int)round((microtime(true) - $t0) * 1000);
+
+        // 기존 logEnd 포맷 유지
+        $this->logEnd(__FUNCTION__, $charsTotal, $charsTotal, $updated);
+
+        // ✅ daemon이 받아서 찍을 stats
+        return [
+            'dir' => $dir,
+            'files' => $filesCount,
+            'charsTotal' => $charsTotal,
+            'charsProcessed' => $charsProcessed,
+            'updated' => $updated,
+            'expiredFiles' => $skippedExpired,
+            'errors' => $errors,
+            'elapsedMs' => $elapsedMs,
+        ];
+    }
 }
