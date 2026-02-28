@@ -1,0 +1,25 @@
+diff --git a/sass/layout/_map_module.scss b/sass/layout/_map_module.scss
+index 43ace7e3..021ad411 100644
+--- a/sass/layout/_map_module.scss
++++ b/sass/layout/_map_module.scss
+@@ -1,7 +1,7 @@
+ $colMinWidth:               444px;
+ 
+-$mapHeight:                 1500px;
+-$mapWidth:                  2500px;
++$mapHeight:                 3500px;
++$mapWidth:                  4000px;
+ 
+ $mapAreaHeight:             520px + 38px;
+ $mapAreaMinHeight:          300px;
+@@ -229,8 +229,8 @@ $mapModuleGridRowMinHeight: 38px;
+       height: $mapAreaHeight;
+       //max-width: $mapWrapperMaxWidth;
+       min-height: $mapAreaMinHeight;
+-      max-height: $mapAreaMaxHeight;
+-      overflow: hidden; // required for resizing to work with pos: absolute "overlay" elements
++      max-height: $mapHeight + 38px;
++      overflow: auto; // allow scrolling for large map
+       padding: 5px;
+       background: rgba($gray-darker, 0.93);
+       box-shadow: inset -3px 3px 10px 0 rgba($black, 0.3);

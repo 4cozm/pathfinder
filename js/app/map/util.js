@@ -765,32 +765,45 @@ define([
             let scaledWidth = el.getBoundingClientRect().width;
             let scaledHeight = el.getBoundingClientRect().height;
             let mapContainer = $(el);
-            let mapWidth = mapContainer.outerWidth(); // this is fix (should never change)
-            let mapHeight = mapContainer.outerHeight(); // this is fix (should never change)
-            let wrapperWidth = mapContainer.parents('.mCSB_container_wrapper').outerWidth(); // changes on browser resize (map window)
-            let wrapperHeight = mapContainer.parents('.mCSB_container_wrapper').outerHeight(); // changes on drag resize (map window)
-            let scrollableWidth = (zoom === 1 || mapWidth !== scaledWidth && scaledWidth > wrapperWidth);
-            let scrollableHeight = (zoom === 1 || mapHeight !== scaledHeight && scaledHeight > wrapperHeight);
+        let mapWidth = mapContainer.outerWidth(); // this is fix (should never change)
+        let mapHeight = mapContainer.outerHeight(); // this is fix (should never change)
+        
+        let mCSB_wrapper = mapContainer.parents('.mCSB_container_wrapper');
+        let wrapperWidth = mCSB_wrapper.length ? mCSB_wrapper.outerWidth() : mapContainer.parents('.mCustomScrollbar').outerWidth(); 
+        let wrapperHeight = mCSB_wrapper.length ? mCSB_wrapper.outerHeight() : mapContainer.parents('.mCustomScrollbar').outerHeight();
+        
+        // Ensure scrollable flag checks against wrapper minus some margin
+        let scrollableWidth = true; // Force true to always allow scrolling
+        let scrollableHeight = true;
 
-            mapContainer.parents('.mCSB_container').css({
-                'width': scrollableWidth ? scaledWidth + 'px' : (wrapperWidth - 50) + 'px',
-                'height': scrollableHeight ? scaledHeight + 'px' : (wrapperHeight) + 'px',
-            });
-
-            let areaMap = mapContainer.closest('.mCustomScrollbar');
-            if(scrollableWidth && scrollableHeight){
-                areaMap.mCustomScrollbar('update');
-            }else{
-                areaMap.mCustomScrollbar('scrollTo', '#' + mapContainer.attr('id'), {
-                    scrollInertia: 0,
-                    scrollEasing: 'linear',
-                    timeout: 0,
-                    moveDragger: false
-                });
-            }
+        let mCSB_container = mapContainer.parents('.mCSB_container')[0];
+        if(mCSB_container){
+            mCSB_container.style.setProperty('width', scaledWidth + 'px', 'important');
+            mCSB_container.style.setProperty('height', scaledHeight + 'px', 'important');
         }
 
-        return zoomChange;
+        let areaMap = mapContainer.closest('.mCustomScrollbar');
+        if(scrollableWidth && scrollableHeight){
+            areaMap.mCustomScrollbar('update');
+            
+            // Re-apply css after update to prevent plugin from overriding with original width
+            setTimeout(() => {
+                if(mCSB_container){
+                    mCSB_container.style.setProperty('width', scaledWidth + 'px', 'important');
+                    mCSB_container.style.setProperty('height', scaledHeight + 'px', 'important');
+                }
+            }, 10);
+        }else{
+            areaMap.mCustomScrollbar('scrollTo', '#' + mapContainer.attr('id'), {
+                scrollInertia: 0,
+                scrollEasing: 'linear',
+                timeout: 0,
+                moveDragger: false
+            });
+        }
+    }
+
+    return zoomChange;
     };
 
     /**

@@ -252,37 +252,37 @@ define([
             $(pageMenuLeftEl).append(getMenu([
                 {
                     type: 'button',
-                    label: 'Home',
+                    label: '홈',
                     icon: 'fa-home',
                     href: '/'
                 },{
                     type: 'heading',
-                    label: 'Information'
+                    label: '정보'
                 },{
                     type: 'button',
-                    label: 'Statistics',
+                    label: '통계',
                     icon: 'fa-chart-line',
                     btnType: 'info',
                     action: 'ShowStatsDialog'
                 },{
                     type: 'button',
-                    label: 'Wormhole data',
+                    label: '웜홀 데이터',
                     icon: 'fa-space-shuttle',
                     btnType: 'info',
                     action: 'ShowJumpInfo'
                 },{
                     type: 'button',
-                    label: 'Wormhole effects',
+                    label: '웜홀 효과',
                     icon: 'fa-crosshairs',
                     btnType: 'info',
                     action: 'ShowSystemEffectInfo'
                 },{
                     type: 'heading',
-                    label: 'Settings'
+                    label: '설정'
                 },{
                     type: 'button',
                     class: 'loading',
-                    label: 'Account',
+                    label: '계정',
                     icon: 'fa-user',
                     group: 'userOptions',
                     action: 'ShowSettingsDialog'
@@ -294,21 +294,21 @@ define([
                     action: 'Fullscreen'
                 } : null,{
                     type: 'button',
-                    label: 'Notification test',
+                    label: '알림 테스트',
                     icon: 'fa-volume-up',
                     action: 'NotificationTest'
                 },{
                     type: 'heading',
-                    label: 'Danger zone'
+                    label: '위험 구역'
                 },{
                     type: 'button',
-                    label: 'Delete account',
+                    label: '계정 탈퇴',
                     icon: 'fa-user-times',
                     btnType: 'danger',
                     action: 'DeleteAccount'
                 },{
                     type: 'button',
-                    label: 'Logout',
+                    label: '로그아웃',
                     icon: 'fa-sign-in-alt',
                     btnType: 'warning',
                     action: 'Logout',
@@ -337,25 +337,25 @@ define([
                 {
                     type: 'button',
                     class: 'loading',
-                    label: 'Settings',
+                    label: '지도 설정',
                     icon: 'fa-cogs',
                     group: 'mapOptions',
                     action: 'ShowMapSettings',
                     data: {tab: 'settings'}
                 },{
                     type: 'button',
-                    label: 'Information',
+                    label: '지도 정보',
                     icon: 'fa-street-view',
                     action: 'ShowMapInfo',
                     data: {tab: 'information'}
                 },{
                     type: 'heading',
-                    label: 'Map'
+                    label: '지도 옵션'
                 },{
                     type: 'button',
                     id: Util.config.menuButtonGridId,
                     class: 'loading',
-                    label: 'Grid snapping',
+                    label: '그리드 스냅',
                     icon: 'fa-th',
                     group: 'mapOptions',
                     action: 'MapOption',
@@ -365,7 +365,7 @@ define([
                     type: 'button',
                     id: Util.config.menuButtonMagnetizerId,
                     class: 'loading',
-                    label: 'Magnetizing',
+                    label: '마그네틱 정렬',
                     icon: 'fa-magnet',
                     group: 'mapOptions',
                     action: 'MapOption',
@@ -373,12 +373,12 @@ define([
                     data: {option: 'mapMagnetizer', toggle: true}
                 },{
                     type: 'heading',
-                    label: 'System'
+                    label: '성계 옵션'
                 },{
                     type: 'button',
                     id: Util.config.menuButtonRegionId,
                     class: 'loading',
-                    label: 'Region label',
+                    label: '지역 라벨표시',
                     icon: 'fa-map-marked-alt',
                     group: 'mapOptions',
                     action: 'MapOption',
@@ -388,7 +388,7 @@ define([
                     type: 'button',
                     id: Util.config.menuButtonCompactId,
                     class: 'loading',
-                    label: 'Compact view',
+                    label: '컴팩트 뷰',
                     icon: 'fa-compress',
                     group: 'mapOptions',
                     action: 'MapOption',
@@ -396,12 +396,12 @@ define([
                     data: {option: 'systemCompact', toggle: true}
                 },{
                     type: 'heading',
-                    label: 'Connection'
+                    label: '연결 옵션'
                 },{
                     type: 'button',
                     id: Util.config.menuButtonEndpointId,
                     class: 'loading',
-                    label: 'Signature overlay',
+                    label: '시그니처 오버레이',
                     icon: 'fa-link',
                     group: 'mapOptions',
                     action: 'MapOption',
@@ -409,32 +409,32 @@ define([
                     data: {option: 'connectionSignatureOverlays', toggle: true}
                 },{
                     type: 'heading',
-                    label: 'Help'
+                    label: '도움말'
                 },{
                     type: 'button',
-                    label: 'Manual',
+                    label: '메뉴얼',
                     icon: 'fa-book-reader',
                     btnType: 'info',
                     action: 'Manual'
                 },{
                     type: 'button',
-                    label: 'Shortcuts',
+                    label: '단축키',
                     icon: 'fa-keyboard',
                     btnType: 'info',
                     action: 'Shortcuts'
                 },{
                     type: 'button',
-                    label: 'Task-Manager',
+                    label: '작업 관리자',
                     icon: 'fa-tasks',
                     btnType: 'info',
                     action: 'ShowTaskManager'
                 },{
                     type: 'heading',
-                    label: 'Danger zone'
+                    label: '위험 구역'
                 },{
                     type: 'button',
                     id: Util.config.menuButtonMapDeleteId,
-                    label: 'Delete map',
+                    label: '지도 삭제',
                     icon: 'fa-trash',
                     btnType: 'danger',
                     action: 'DeleteMap'

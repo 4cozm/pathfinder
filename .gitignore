@@ -55,3 +55,4 @@ composer-dev.lock
 /public/js/vX.X.X/
 /vendor/
 /history/
+/app/environment.ini

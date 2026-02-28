@@ -5,20 +5,20 @@
             <ul class="nav navbar-nav {{dialogNavigationClass}}" role="tablist">
                 <li class="{{#openTabNew}}active{{/openTabNew}}">
                     <a role="tab" data-toggle="tab" data-name="newMap" href="#{{dialogMapNewContainerId}}">
-                        <i class="fas fa-plus fa-fw"></i>&nbsp;New map
+                        <i class="fas fa-plus fa-fw"></i>&nbsp;새 맵
                     </a>
                 </li>
                 {{^hideEditTab}}
                     <li class="{{#openTabEdit}}active{{/openTabEdit}}">
                         <a role="tab" data-toggle="tab" data-name="editMap" href="#{{dialogMapEditContainerId}}">
-                            <i class="fas fa-edit fa-fw"></i>&nbsp;Edit map
+                            <i class="fas fa-edit fa-fw"></i>&nbsp;맵 편집
                         </a>
                     </li>
                 {{/hideEditTab}}
                 {{^hideSettingsTab}}
                     <li class="{{#openTabSettings}}active{{/openTabSettings}}">
                         <a role="tab" data-toggle="tab" data-name="settings" href="#{{dialogMapSettingsContainerId}}">
-                            <i class="fas fa-cogs fa-fw"></i>&nbsp;Settings
+                            <i class="fas fa-cogs fa-fw"></i>&nbsp;설정
                         </a>
                     </li>
                 {{/hideSettingsTab}}
@@ -26,7 +26,7 @@
                 {{^hideDownloadTab}}
                     <li class="{{#openTabDownload}}active{{/openTabDownload}} pull-right">
                         <a role="tab" data-toggle="tab" data-name="download" href="#{{dialogMapDownloadContainerId}}">
-                            <i class="fas fa-exchange-alt fa-fw"></i>&nbsp;Import/Export
+                            <i class="fas fa-exchange-alt fa-fw"></i>&nbsp;가져오기/내보내기
                         </a>
                     </li>
                 {{/hideDownloadTab}}
@@ -48,14 +48,14 @@
                     {{#hasRightMapUpdate}}
                         <div class="row">
                             <div class="col-xs-12 col-sm-12 col-md-8">
-                                <h4 class="pf-dynamic-area">Map options</h4>
+                                <h4 class="pf-dynamic-area">맵 옵션</h4>
 
                                 <div class="col-xs-6 col-sm-6 col-md-4">
                                     <div class="form-group">
                                         <div class="col-xs-12 col-sm-12 checkbox">
                                             <input id="{{deleteExpiredConnectionsId}}" name="deleteExpiredConnections" value="1" type="checkbox" {{#deleteExpiredConnections}}checked{{/deleteExpiredConnections}}>
-                                            <label for="{{deleteExpiredConnectionsId}}">Auto delete outdated wormholes
-                                                <i class="fas fa-fw fa-question-circle pf-help-light" title="outdated WHs (~2 days)"></i>
+                                            <label for="{{deleteExpiredConnectionsId}}">낙후된 웜홀 자동 삭제
+                                                <i class="fas fa-fw fa-question-circle pf-help-light" title="오래된 웜홀 (~2일)"></i>
                                             </label>
                                         </div>
                                     </div>
@@ -65,8 +65,8 @@
                                     <div class="form-group">
                                         <div class="col-xs-12 col-sm-12 checkbox" >
                                             <input id="{{deleteEolConnectionsId}}" name="deleteEolConnections" value="1" type="checkbox" {{#deleteEolConnections}}checked{{/deleteEolConnections}}>
-                                            <label for="{{deleteEolConnectionsId}}">Auto delete expired wormholes
-                                                <i class="fas fa-fw fa-question-circle pf-help-light" title="expired EOL WHs (~4h 15min)"></i>
+                                            <label for="{{deleteEolConnectionsId}}">만료된 웜홀 자동 삭제
+                                                <i class="fas fa-fw fa-question-circle pf-help-light" title="만료된 EOL 웜홀 (~4시간 15분)"></i>
                                             </label>
                                         </div>
                                     </div>
@@ -423,7 +423,7 @@
                                     <input class="form-control" id="{{fieldExportId}}" type="text" name="{{fieldExportId}}" value="{{#formatFilename}}{{mapData.config.name}}{{/formatFilename}}" pattern="^[_a-zA-Z0-9]{1,}$" data-minlength="3" data-minlength-error="Min. of 3 characters" data-error="Invalid format: _ a-z A-Z 0-9" required>
                                     <div class="input-group-btn">
                                         <a type="button" id="{{buttonExportId}}" class="btn btn-default" href="" download="data.json">
-                                            <i class="fas fa-fw fa-upload"></i> Export
+                                            <i class="fas fa-fw fa-upload"></i> 내보내기
                                         </a>
                                     </div>
                                 </div>
@@ -434,12 +434,12 @@
                 {{/hasRightMapExport}}
                 {{^hasRightMapExport}}
                 <div class="alert alert-info">
-                    <span class="txt-color txt-color-info">Restricted</span>
-                    <small>You don´t have the required roles.</small>
+                    <span class="txt-color txt-color-info">제한됨</span>
+                    <small>권한이 없습니다.</small>
                 </div>
                 {{/hasRightMapExport}}
 
-                <h4 class="pf-dynamic-area">Map import</h4>
+                <h4 class="pf-dynamic-area">맵 가져오기</h4>
                 {{#hasRightMapImport}}
                     <form role="form" class="form-horizontal" id="{{dialogMapImportFormId}}">
                         <div class="form-group">
@@ -462,7 +462,7 @@
                                             <input class="form-control" id="{{fieldImportId}}" type="file" name="{{fieldImportId}}" accept=".json" data-error="Select a valid file" required>
                                             <div class="input-group-btn">
                                                 <button type="button" id="{{buttonImportId}}" class="btn btn-default">
-                                                    <i class="fas fa-fw fa-download"></i> Import
+                                                    <i class="fas fa-fw fa-download"></i> 가져오기
                                                 </button>
                                             </div>
                                         </div>

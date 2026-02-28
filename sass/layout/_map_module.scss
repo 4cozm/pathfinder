@@ -1,13 +1,16 @@
 $colMinWidth:               444px;
 
-$mapHeight:                 1500px;
-$mapWidth:                  2500px;
+$mapHeight:                 3500px;
+$mapWidth:                  4000px;
+
+// map wrapper original width (decoupled from the canvas so the UI doesn't blow out horizontally)
+$mapWrapperOriginalWidth:   2500px;
 
 $mapAreaHeight:             520px + 38px;
 $mapAreaMinHeight:          300px;
 $mapAreaMaxHeight:          1000px;              // no vertical scrollbar: $mapHeight + 38px;
 
-$mapModuleMaxWidth:         floor(4 * ($mapWidth + 16) / 3);
+$mapModuleMaxWidth:         floor(4 * ($mapWrapperOriginalWidth + 16) / 3);
 $mapModuleGridGap:          10px;
 $mapModuleGridRowMinHeight: 38px;
 
@@ -229,8 +232,8 @@ $mapModuleGridRowMinHeight: 38px;
       height: $mapAreaHeight;
       //max-width: $mapWrapperMaxWidth;
       min-height: $mapAreaMinHeight;
-      max-height: $mapAreaMaxHeight;
-      overflow: hidden; // required for resizing to work with pos: absolute "overlay" elements
+      max-height: $mapHeight + 38px;
+      overflow: auto; // allow scrolling for large map
       padding: 5px;
       background: rgba($gray-darker, 0.93);
       box-shadow: inset -3px 3px 10px 0 rgba($black, 0.3);

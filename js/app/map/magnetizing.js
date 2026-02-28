@@ -83,7 +83,7 @@ define([
                 // new position must be within parent container
                 // no negative offset!
                 if(
-                    o.left >= 0 && o.left <= 2300 &&
+                    o.left >= 0 && o.left <= 3800 &&
                     system.style.left !== left
                 ){
                     system.style.left = left;
@@ -91,7 +91,7 @@ define([
                 }
 
                 if(
-                    o.top >= 0 && o.top <= 1400 &&
+                    o.top >= 0 && o.top <= 3400 &&
                     system.style.top !== top
                 ){
                     system.style.top = top;

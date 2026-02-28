@@ -74,20 +74,20 @@ define([
         let moduleData = {
             id: config.mapContextMenuId,
             items: [
-                {icon: 'fa-plus', action: 'add_system', text: 'add system'},
-                {icon: 'fa-object-ungroup', action: 'select_all', text: 'select all'},
-                {icon: 'fa-filter', action: 'filter_scope', text: 'filter scope', subitems: [
-                        {subIcon: '', subAction: 'filter_wh', subText: 'wormhole'},
-                        {subIcon: '', subAction: 'filter_stargate', subText: 'stargate'},
-                        {subIcon: '', subAction: 'filter_jumpbridge', subText: 'jumpbridge'},
-                        {subIcon: '', subAction: 'filter_abyssal', subText: 'abyssal'}
+                {icon: 'fa-plus', action: 'add_system', text: '시스템 추가'},
+                {icon: 'fa-object-ungroup', action: 'select_all', text: '모두 선택'},
+                {icon: 'fa-filter', action: 'filter_scope', text: '범위 필터', subitems: [
+                        {subIcon: '', subAction: 'filter_wh', subText: '웜홀'},
+                        {subIcon: '', subAction: 'filter_stargate', subText: '스타게이트'},
+                        {subIcon: '', subAction: 'filter_jumpbridge', subText: '점프브릿지'},
+                        {subIcon: '', subAction: 'filter_abyssal', subText: '어비설'}
                     ]},
-                {icon: 'fa-sitemap', action: 'map', text: 'map', subitems: [
-                        {subIcon: 'fa-edit', subAction: 'map_edit', subText: 'edit map'},
-                        {subIcon: 'fa-street-view', subAction: 'map_info', subText: 'map info'},
+                {icon: 'fa-sitemap', action: 'map', text: '맵', subitems: [
+                        {subIcon: 'fa-edit', subAction: 'map_edit', subText: '맵 편집'},
+                        {subIcon: 'fa-street-view', subAction: 'map_info', subText: '맵 정보'},
                     ]},
                 {divider: true, action: 'delete_systems'},
-                {icon: 'fa-trash', action: 'delete_systems', text: 'delete systems'}
+                {icon: 'fa-trash', action: 'delete_systems', text: '시스템 삭제'}
             ]
         };
 
@@ -102,29 +102,29 @@ define([
         let moduleData = {
             id: config.connectionContextMenuId,
             items: [
-                {icon: 'fa-hourglass-end', action: 'wh_eol', text: 'toggle EOL'},
-                {icon: 'fa-exclamation-triangle', action: 'preserve_mass', text: 'preserve mass'},
-                {icon: 'fa-reply fa-rotate-180', action: 'change_status', text: 'mass status', subitems: [
-                        {subIcon: 'fa-circle', subIconClass: 'txt-color txt-color-gray', subAction: 'status_fresh', subText: 'stage 1 (fresh)'},
-                        {subIcon: 'fa-circle', subIconClass: 'txt-color txt-color-orange', subAction: 'status_reduced', subText: 'stage 2 (reduced)'},
-                        {subIcon: 'fa-circle', subIconClass: 'txt-color txt-color-redDark', subAction: 'status_critical', subText: 'stage 3 (critical)'}
+                {icon: 'fa-hourglass-end', action: 'wh_eol', text: 'EOL 토글'},
+                {icon: 'fa-exclamation-triangle', action: 'preserve_mass', text: '질량 보존'},
+                {icon: 'fa-reply fa-rotate-180', action: 'change_status', text: '질량 상태', subitems: [
+                        {subIcon: 'fa-circle', subIconClass: 'txt-color txt-color-gray', subAction: 'status_fresh', subText: '1단계 (정상)'},
+                        {subIcon: 'fa-circle', subIconClass: 'txt-color txt-color-orange', subAction: 'status_reduced', subText: '2단계 (수축)'},
+                        {subIcon: 'fa-circle', subIconClass: 'txt-color txt-color-redDark', subAction: 'status_critical', subText: '3단계 (위험)'}
 
                     ]},
-                {icon: 'fa-reply fa-rotate-180', action: 'wh_jump_mass_change', text: 'ship size', subitems: [
-                        {subIcon: 'fa-char', subChar: 'S', subAction: 'wh_jump_mass_s', subText: 'smallest ships'},
-                        {subIcon: 'fa-char', subChar: 'M', subAction: 'wh_jump_mass_m', subText: 'medium ships'},
-                        {subIcon: 'fa-char', subChar: 'L', subAction: 'wh_jump_mass_l', subText: 'larger ships'},
-                        {subIcon: 'fa-char', subChar: 'XL', subAction: 'wh_jump_mass_xl', subText: 'capital ships'}
+                {icon: 'fa-reply fa-rotate-180', action: 'wh_jump_mass_change', text: '함선 크기', subitems: [
+                        {subIcon: 'fa-char', subChar: 'S', subAction: 'wh_jump_mass_s', subText: '소형선'},
+                        {subIcon: 'fa-char', subChar: 'M', subAction: 'wh_jump_mass_m', subText: '중형선'},
+                        {subIcon: 'fa-char', subChar: 'L', subAction: 'wh_jump_mass_l', subText: '대형선'},
+                        {subIcon: 'fa-char', subChar: 'XL', subAction: 'wh_jump_mass_xl', subText: '캐피탈'}
 
                     ]},
-                {icon: 'fa-crosshairs', action: 'change_scope', text: 'change scope', subitems: [
-                        {subIcon: 'fa-minus-circle', subIconClass: '', subAction: 'scope_wh', subText: 'wormhole'},
-                        {subIcon: 'fa-minus-circle', subIconClass: 'txt-color txt-color-indigoDarkest', subAction: 'scope_stargate', subText: 'stargate'},
-                        {subIcon: 'fa-minus-circle', subIconClass: 'txt-color txt-color-tealLighter', subAction: 'scope_jumpbridge', subText: 'jumpbridge'}
+                {icon: 'fa-crosshairs', action: 'change_scope', text: '범위 변경', subitems: [
+                        {subIcon: 'fa-minus-circle', subIconClass: '', subAction: 'scope_wh', subText: '웜홀'},
+                        {subIcon: 'fa-minus-circle', subIconClass: 'txt-color txt-color-indigoDarkest', subAction: 'scope_stargate', subText: '스타게이트'},
+                        {subIcon: 'fa-minus-circle', subIconClass: 'txt-color txt-color-tealLighter', subAction: 'scope_jumpbridge', subText: '점프브릿지'}
 
                     ]},
                 {divider: true, action: 'separator'} ,
-                {icon: 'fa-unlink', action: 'delete_connection', text: 'detach'}
+                {icon: 'fa-unlink', action: 'delete_connection', text: '연결 끊기'}
             ]
         };
 
@@ -139,7 +139,7 @@ define([
         let moduleData = {
             id: config.endpointContextMenuId,
             items: [
-                {icon: 'fa-globe', action: 'bubble', text: 'bubbled'}
+                {icon: 'fa-globe', action: 'bubble', text: '버블 있음'}
             ]
         };
 
@@ -165,20 +165,20 @@ define([
         let moduleData = {
             id: config.systemContextMenuId,
             items: [
-                {icon: 'fa-plus', action: 'add_system', text: 'add system'},
-                {icon: 'fa-lock', action: 'lock_system', text: 'lock system'},
-                {icon: 'fa-volume-up', action: 'set_rally', text: 'set rally point'},
-                {icon: 'fa-tags', text: 'set status', subitems: statusData},
-                {icon: 'fa-route', action: 'find_route', text: 'find route'},
-                {icon: 'fa-object-group', action: 'select_connections', text: 'select connections'},
-                {icon: 'fa-reply fa-rotate-180', text: 'waypoints', subitems: [
-                        {subIcon: 'fa-flag', subAction: 'set_destination', subText: 'set destination'},
+                {icon: 'fa-plus', action: 'add_system', text: '시스템 추가'},
+                {icon: 'fa-lock', action: 'lock_system', text: '시스템 잠금/해제'},
+                {icon: 'fa-volume-up', action: 'set_rally', text: '집결지 설정'},
+                {icon: 'fa-tags', text: '상태 설정', subitems: statusData},
+                {icon: 'fa-route', action: 'find_route', text: '경로 찾기'},
+                {icon: 'fa-object-group', action: 'select_connections', text: '연결 선택'},
+                {icon: 'fa-reply fa-rotate-180', text: '웨이포인트', subitems: [
+                        {subIcon: 'fa-flag', subAction: 'set_destination', subText: '목적지 설정'},
                         {subDivider: true, action: ''},
-                        {subIcon: 'fa-step-backward', subAction: 'add_first_waypoint', subText: 'add new [start]'},
-                        {subIcon: 'fa-step-forward', subAction: 'add_last_waypoint', subText: 'add new [end]'}
+                        {subIcon: 'fa-step-backward', subAction: 'add_first_waypoint', subText: '웨이포인트 추가 [시작]'},
+                        {subIcon: 'fa-step-forward', subAction: 'add_last_waypoint', subText: '웨이포인트 추가 [종료]'}
                     ]},
                 {divider: true, action: 'delete_system'},
-                {icon: 'fa-trash', action: 'delete_system', text: 'delete system(s)'}
+                {icon: 'fa-trash', action: 'delete_system', text: '시스템 삭제'}
             ]
         };
 

@@ -1,4 +1,5 @@
 <?php
+
 namespace Exodus4D\Pathfinder\Controller\Api;
 
 use Exodus4D\Pathfinder\Lib\Config;
@@ -59,8 +60,9 @@ class Standalone extends User
             'ttl'     => self::PAYLOAD_TTL_SECONDS
         ]);
     }
-    public function ping(\Base $f3){
-    $this->jsonOut($f3, 200, ['ok'=>true,'pong'=>time()]);
+    public function ping(\Base $f3)
+    {
+        $this->jsonOut($f3, 200, ['ok' => true, 'pong' => time()]);
     }
 
 
@@ -80,7 +82,10 @@ class Standalone extends User
         if ($payload === '') {
             $this->jsonOut($f3, 400, ['ok' => false, 'message' => 'Missing payload']);
         }
-
+        $jwk = is_array($body) ? ($body['jwk'] ?? null) : null;
+        if (!is_array($jwk)) {
+            $this->jsonOut($f3, 400, ['ok' => false, 'message' => 'Missing jwk']);
+        }
         $raw = $this->b64url_decode($payload);
         if ($raw === null) {
             $this->jsonOut($f3, 400, ['ok' => false, 'message' => 'Bad payload encoding']);
@@ -116,6 +121,33 @@ class Standalone extends User
         // nonce 재사용 방지 (issue에서 이미 markOnce 했지만, verify에서도 “확실히” 막고 싶으면 consume 형태로 바꿀 수 있음)
         // 여기서는 issue에서 이미 1회성으로 찍혔으므로 별도 재검증은 생략.
 
+        $pingSecret = (string)Config::getEnvironmentData('PF_PING_JWT_SECRET');
+        if (strlen($pingSecret) < 32) {
+            $this->jsonOut($f3, 500, ['ok' => false, 'message' => 'Missing PF_PING_JWT_SECRET']);
+        }
+
+        try {
+            $jkt = $this->jwk_thumbprint($jwk);
+        } catch (\Throwable $e) {
+            $this->jsonOut($f3, 400, ['ok' => false, 'message' => 'Bad jwk']);
+        }
+
+        // 핑 토큰 TTL (MVP는 길게 잡는 게 운영 편함)
+        $pingExpSec = 60 * 60 * 12; // 12h
+        $iat = time();
+        $exp = $iat + $pingExpSec;
+
+        $pingToken = $this->jwt_hs256([
+            'iss' => 'pathfinder',
+            'aud' => 'ping-api',
+            'sub' => (string)$cid,
+            'cid' => $cid,
+            'iat' => $iat,
+            'exp' => $exp,
+            'scope' => 'discord:ping',
+            'cnf' => ['jkt' => $jkt],
+        ], $pingSecret);
+
         // ticket 발급 + 저장
         $ticket = $this->b64url_encode(random_bytes(24)); // 대략 32 chars
         if (!$this->ticket_put($ticket, $cid, $ts, self::TICKET_TTL_SECONDS)) {
@@ -127,7 +159,9 @@ class Standalone extends User
             'ticket' => $ticket,
             'ttl'    => self::TICKET_TTL_SECONDS,
             'cid'    => $cid,
-            'ts'     => $ts
+            'ts'     => $ts,
+            'ping_access_token' => $pingToken,
+            'ping_expires_in'   => $pingExpSec
         ]);
     }
 
@@ -136,14 +170,14 @@ class Standalone extends User
      * - 유효하면 1회성으로 삭제하고 [cid, ts] 반환
      * - 실패하면 null
      */
-    public function consumeTicket(string $ticket) : ?array
+    public function consumeTicket(string $ticket): ?array
     {
         return $this->ticket_consume($ticket, self::TICKET_TTL_SECONDS);
     }
 
     // ----------------- helpers -----------------
 
-    private function readJsonBody() : ?array
+    private function readJsonBody(): ?array
     {
         $raw = file_get_contents('php://input');
         if (!is_string($raw) || $raw === '') return null;
@@ -159,12 +193,12 @@ class Standalone extends User
         exit;
     }
 
-    private function b64url_encode(string $bin) : string
+    private function b64url_encode(string $bin): string
     {
         return rtrim(strtr(base64_encode($bin), '+/', '-_'), '=');
     }
 
-    private function b64url_decode(string $b64url) : ?string
+    private function b64url_decode(string $b64url): ?string
     {
         $b64 = strtr($b64url, '-_', '+/');
         $pad = strlen($b64) % 4;
@@ -175,7 +209,7 @@ class Standalone extends User
 
     // ----- nonce (payload replay 방지) -----
 
-    private function nonce_markOnce(string $nonce, int $ttlSec) : bool
+    private function nonce_markOnce(string $nonce, int $ttlSec): bool
     {
         $dir = $this->tmpDir(self::NONCE_DIR);
         if (!is_dir($dir)) @mkdir($dir, 0777, true);
@@ -200,7 +234,7 @@ class Standalone extends User
 
     // ----- ticket (verify 결과) -----
 
-    private function ticket_put(string $ticket, int $cid, int $ts, int $ttlSec) : bool
+    private function ticket_put(string $ticket, int $cid, int $ts, int $ttlSec): bool
     {
         $dir = $this->tmpDir(self::TICKET_DIR);
         if (!is_dir($dir)) @mkdir($dir, 0777, true);
@@ -224,7 +258,7 @@ class Standalone extends User
         return true;
     }
 
-    private function ticket_consume(string $ticket, int $ttlSec) : ?array
+    private function ticket_consume(string $ticket, int $ttlSec): ?array
     {
         $dir = $this->tmpDir(self::TICKET_DIR);
         $safe = preg_replace('/[^a-zA-Z0-9\-_]/', '', $ticket);
@@ -256,7 +290,7 @@ class Standalone extends User
 
     // ----- common fs helpers -----
 
-    private function tmpDir(string $sub) : string
+    private function tmpDir(string $sub): string
     {
         // 컨테이너에서 이미 chmod 777 해둔 디렉토리
         $root = '/var/www/html/pathfinder/tmp';
@@ -280,5 +314,49 @@ class Standalone extends User
             }
         }
     }
+    private function jwt_hs256(array $claims, string $secret): string
+    {
+        $header = ['alg' => 'HS256', 'typ' => 'JWT'];
 
+        $hJson = json_encode($header, JSON_UNESCAPED_SLASHES);
+        $pJson = json_encode($claims, JSON_UNESCAPED_SLASHES);
+
+        if (!is_string($hJson) || !is_string($pJson)) {
+            throw new \RuntimeException('jwt json encode failed');
+        }
+
+        $h = $this->b64url_encode($hJson);
+        $p = $this->b64url_encode($pJson);
+        $signingInput = $h . '.' . $p;
+        $sig = hash_hmac('sha256', $signingInput, $secret, true);
+        $s = $this->b64url_encode($sig);
+
+        return $signingInput . '.' . $s;
+    }
+
+    /**
+     * RFC7638 JWK thumbprint (P-256용: kty, crv, x, y)
+     * - 스탠드얼론이 보내는 jwk에서 필요한 필드만 “정해진 순서”로 canonical JSON 구성
+     * - SHA-256 후 base64url
+     */
+    private function jwk_thumbprint(array $jwk): string
+    {
+        $kty = (string)($jwk['kty'] ?? '');
+        $crv = (string)($jwk['crv'] ?? '');
+        $x   = (string)($jwk['x'] ?? '');
+        $y   = (string)($jwk['y'] ?? '');
+
+        if ($kty === '' || $crv === '' || $x === '' || $y === '') {
+            // 최소검증
+            throw new \RuntimeException('Bad jwk fields');
+        }
+        if ($kty !== 'EC' || $crv !== 'P-256') {
+            throw new \RuntimeException('Unsupported jwk');
+        }
+
+        // RFC7638: key order 고정 중요
+        $canon = '{"crv":"' . $crv . '","kty":"' . $kty . '","x":"' . $x . '","y":"' . $y . '"}';
+        $hash = hash('sha256', $canon, true);
+        return $this->b64url_encode($hash);
+    }
 }

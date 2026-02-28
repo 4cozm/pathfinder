@@ -68,7 +68,7 @@ define([
 
         mapTabContentLayoutColumnOptions: ['grid-2', 'grid-3'],
         mapTabContentLayoutOrientationOptions: ['left', 'right'],
-        defaultMapTabContentCols: 'grid-3',
+        defaultMapTabContentCols: 'grid-2',
         defaultMapTabContentOrientation: 'right',
     };
 

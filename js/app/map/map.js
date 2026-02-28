@@ -1558,6 +1558,47 @@ define([
     let isValidSystem = systemData => (Util.getObjVal(systemData, 'name') || '').length > 0;
 
     /**
+     * show a temporary notification above a system
+     * @param system
+     * @param description
+     */
+    let showSystemNotification = (system, description) => {
+        if(description && description.length > 0){
+            let notification = $('<div>', {
+                class: 'pf-system-notification',
+                text: description
+            }).css({
+                position: 'absolute',
+                top: '-35px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'rgba(0, 0, 0, 0.7)',
+                color: '#fff',
+                padding: '2px 8px',
+                borderRadius: '3px',
+                fontSize: '10px',
+                zIndex: 1000,
+                pointerEvents: 'none',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '200px'
+            });
+
+            system.append(notification);
+
+            // 5 second timer to remove notification
+            setTimeout(() => {
+                notification.fadeOut(500, function(){
+                    $(this).remove();
+                });
+            }, 5000);
+        }
+    };
+
+    /**
      * draw a system with its data to a map
      * @param map
      * @param systemData
@@ -1598,8 +1639,14 @@ define([
                 system: newSystem
             };
 
+            // show temporary notification
+            showSystemNotification(newSystem, systemData.description);
+
             // connect new system (if connection data is given)
-            if(connectedSystem){
+            // -> Skip Jita connection (ESI logic might trigger this)
+            let isJita = systemData.systemId === 30000142 || systemData.name === 'Jita';
+
+            if(connectedSystem && !isJita){
                 // hint: "scope + type" might be changed automatically when it gets saved
                 // -> based on jump distance,..
                 connectionData = Object.assign({}, {
@@ -2650,8 +2697,10 @@ define([
 
                 if(
                     dataStore &&
-                    dataStore[this.data.option]
+                    dataStore.hasOwnProperty(this.data.option)
                 ){
+                    dataExists = Boolean(dataStore[this.data.option]);
+                } else if (this.data.option === 'mapSnapToGrid') {
                     dataExists = true;
                 }
 
@@ -2673,8 +2722,12 @@ define([
                     // show map overlay info icon
                     MapOverlayUtil.getMapOverlay(this.mapContainer, 'info').updateOverlayIcon(this.data.option, 'hide');
 
-                    // delete map option
-                    Util.getLocalStore('map').removeItem(`${this.mapContainer.data('id')}.${this.data.option}`);
+                    // delete map option or set explicit disable for default-true options
+                    if(this.data.option === 'mapSnapToGrid'){
+                        Util.getLocalStore('map').setItem(`${this.mapContainer.data('id')}.${this.data.option}`, 0);
+                    }else{
+                        Util.getLocalStore('map').removeItem(`${this.mapContainer.data('id')}.${this.data.option}`);
+                    }
                 }else{
                     // toggle button class
                     button.addClass('active');
