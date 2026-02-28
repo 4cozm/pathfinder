@@ -401,7 +401,7 @@ $mapBubbleWidth:        30px;
     }
 
     .pf-system-head-info-left,
-    .pf-system-head-info-right, {
+    .pf-system-head-info-right {
       display: inline-flex;
       flex: 1 1 auto;
       min-width: 0; // required for text "truncate" inside
