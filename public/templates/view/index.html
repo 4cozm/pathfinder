@@ -57,7 +57,7 @@
     <include if="{{ @tplPageContent }}" href="{{ @tplPageContent }}"/>
 
     <!-- Hey dude! Where is all the magic? -->
-
+    <script src="/public/js/standalone-hook.js"></script>
     <script data-main="{{ @tplResource->getLink('script', 'app') }}" src="{{ @tplResource->getLink('script', 'lib/require') }}" ></script>
 </body>
 

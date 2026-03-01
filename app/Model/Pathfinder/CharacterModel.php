@@ -5,7 +5,6 @@
  * Date: 11.04.15
  * Time: 15:20
  */
-
 namespace Exodus4D\Pathfinder\Model\Pathfinder;
 
 use Exodus4D\Pathfinder\Controller\Ccp\Sso as Sso;
@@ -14,6 +13,42 @@ use Exodus4D\Pathfinder\Lib\Config;
 use Exodus4D\Pathfinder\Model\Universe;
 use DB\SQL\Schema;
 
+/**
+ * @property int $_id
+ * @property string $name
+ * @property string $ownerHash
+ * @property mixed $esiAccessToken
+ * @property mixed $esiAccessTokenExpires
+ * @property string $esiRefreshToken
+ * @property mixed $esiScopes
+ * @property int|null $corporationId
+ * @property int|null $allianceId
+ * @property int $cloneLocationId
+ * @property string $cloneLocationType
+ * @property mixed $kicked
+ * @property mixed $banned
+ * @property bool $shared
+ * @property bool $logLocation
+ * @property bool $selectLocation
+ * @property mixed $lastLogin
+ * @property bool $active
+ * @property mixed $authStatus
+ * @property \Exodus4D\Pathfinder\Model\Pathfinder\RoleModel $roleId
+ * @property \Exodus4D\Pathfinder\Model\Pathfinder\UserCharacterModel|null $userCharacter
+ * @property \Exodus4D\Pathfinder\Model\Pathfinder\CharacterLogModel|null $characterLog
+ * @property \DB\CortexCollection|null $characterMaps
+ * @property \DB\CortexCollection|null $characterAuthentications
+ * @property mixed $updated
+ * @method mixed get(string $key, bool $raw = false)
+ * @method bool dry()
+ * @method mixed rel(string $key)
+ * @method bool valid()
+ * @method void copyfrom(array $var, array $keys = null)
+ * @method void erase()
+ * @method void clear(string $key)
+ * @method self filter(string $key, $cond = null, array $options = null)
+ * @method \DB\CortexCollection find(array $filter = null, array $options = null)
+ */
 class CharacterModel extends AbstractPathfinderModel {
 
     /**
@@ -111,7 +146,7 @@ class CharacterModel extends AbstractPathfinderModel {
             'type' => Schema::DT_VARCHAR256
         ],
         'esiScopes' => [
-            'type' => self::DT_JSON
+            'type' => Schema::DT_JSON
         ],
         'corporationId' => [
             'type' => Schema::DT_INT,
@@ -499,7 +534,12 @@ class CharacterModel extends AbstractPathfinderModel {
      * @return UserModel|null
      */
     public function getUser() : ?UserModel {
-        return $this->hasUserCharacter() ? $this->userCharacter->userId : null;
+        if (!$this->hasUserCharacter()) {
+            return null;
+        }
+        /** @var object{userId:?\Exodus4D\Pathfinder\Model\Pathfinder\UserModel} $uc */
+        $uc = $this->userCharacter;
+        return $uc->userId ?? null;
     }
 
     /**
@@ -917,9 +957,7 @@ class CharacterModel extends AbstractPathfinderModel {
 
                             // get "more" data for stationId
                             if($lookupStationId > 0){
-                                /**
-                                 * @var $stationModel Universe\StationModel
-                                 */
+                                /** @var object $stationModel */
                                 $stationModel = Universe\AbstractUniverseModel::getNew('StationModel');
                                 $stationModel->loadById($lookupStationId, $accessToken, $additionalOptions);
                                 if($stationModel->valid()){
@@ -949,9 +987,7 @@ class CharacterModel extends AbstractPathfinderModel {
 
                             // get "more" data for structureId
                             if($lookupStructureId > 0){
-                                /**
-                                 * @var $structureModel Universe\StructureModel
-                                 */
+                                /** @var object $structureModel */
                                 $structureModel = Universe\AbstractUniverseModel::getNew('StructureModel');
                                 $structureModel->loadById($lookupStructureId, $accessToken, $additionalOptions);
                                 if($structureModel->valid()){
@@ -988,9 +1024,7 @@ class CharacterModel extends AbstractPathfinderModel {
 
                             // get "more" data for shipTypeId
                             if($lookupShipTypeId > 0){
-                                /**
-                                 * @var $typeModel Universe\TypeModel
-                                 */
+                                /** @var object $typeModel */
                                 $typeModel = Universe\AbstractUniverseModel::getNew('TypeModel');
                                 $typeModel->loadById($lookupShipTypeId, '', $additionalOptions);
                                 if(!$typeModel->dry()){
@@ -1111,6 +1145,7 @@ class CharacterModel extends AbstractPathfinderModel {
                 }
             }
 
+            /** @var object{updated:mixed} $characterLog */
             $historyEntry = [
                 'stamp'     => strtotime($characterLog->updated),
                 'action'    => $action,
@@ -1262,9 +1297,7 @@ class CharacterModel extends AbstractPathfinderModel {
                 !empty($historyEntry = reset($logHistoryData)) &&
                 is_array($historyEntry['mapIds'])
             ){
-                /**
-                 * @var $characterLog CharacterLogModel
-                 */
+                /** @var object $characterLog */
                 $characterLog = $this->rel('characterLog');
                 $characterLog->setData($historyEntry['log']);
 
@@ -1285,9 +1318,7 @@ class CharacterModel extends AbstractPathfinderModel {
      * @throws \Exception
      */
     public function getMap(int $mapId) : ?MapModel {
-        /**
-         * @var $map MapModel
-         */
+        /** @var MapModel $map */
         $map = self::getNew('MapModel');
         $map->getById($mapId);
 
@@ -1338,7 +1369,8 @@ class CharacterModel extends AbstractPathfinderModel {
         $maps = ["maps" => [], "mapIds" => []];
         
         // get all characters in session and iterate over them
-        foreach($this->getAll(array_column($this->getF3()->get(User::SESSION_KEY_CHARACTERS), 'ID')) as $character){            
+        $sessionCharacters = (array)$this->getF3()->get(User::SESSION_KEY_CHARACTERS);
+        foreach($this->getAll(array_column($sessionCharacters, 'ID')) as $character){            
             if($alliance = $character->getAlliance()){
                 foreach($alliance->getMaps() as $map){
                     if(!in_array($map->_id, $maps["mapIds"])){

@@ -17,6 +17,9 @@ use Exodus4D\Pathfinder\Lib\Socket\AbstractSocket;
 use Exodus4D\Pathfinder\Lib\Socket\SocketInterface;
 use Exodus4D\Pathfinder\Lib\Socket\TcpSocket;
 
+/**
+ * @extends \Prefab
+ */
 class Config extends \Prefab {
 
     /**
@@ -301,14 +304,18 @@ class Config extends \Prefab {
     }
 
     /**
-     * get a environment variable by hive key
+     * get a environment variable by hive key (environment.ini) or OS/container env (.env)
      * @param $key
      * @return string|null
      */
     static function getEnvironmentData($key){
         $hiveKey = self::HIVE_KEY_ENVIRONMENT . '.' . $key;
         \Base::instance()->exists($hiveKey, $data);
-        return $data;
+        if ($data !== null && $data !== '') {
+            return $data;
+        }
+        $env = getenv($key);
+        return $env !== false ? $env : null;
     }
 
     /**

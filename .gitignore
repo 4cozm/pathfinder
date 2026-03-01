@@ -53,6 +53,8 @@ composer-dev.lock
 /conf/
 /node_modules/
 /public/js/vX.X.X/
+/public/js/v*.*.*/
+/public/css/v*.*.*/
 /vendor/
 /history/
 /app/environment.ini

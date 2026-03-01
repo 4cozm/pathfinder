@@ -2,7 +2,9 @@
 
 namespace Exodus4D\Pathfinder\Controller\Api;
 
+use Base;
 use Exodus4D\Pathfinder\Lib\Config;
+use Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel;
 
 /**
  * /api/Standalone/issue  (POST)  -> { ok:true, payload, ttl }
@@ -21,7 +23,7 @@ class Standalone extends User
     const TICKET_TTL_SECONDS = 60;
     const TICKET_DIR = 'standalone_ticket';
 
-    public function issue(\Base $f3)
+    public function issue(Base $f3)
     {
         $character = $this->getCharacter();
         if (!is_object($character) || empty($character->_id)) {
@@ -35,6 +37,7 @@ class Standalone extends User
 
         $ts = time();
         $nonce = $this->b64url_encode(random_bytes(16));
+        /** @var CharacterModel&object{_id:int} $character */
         $cid = (int)$character->_id;
 
         // nonce 1회성
@@ -60,7 +63,7 @@ class Standalone extends User
             'ttl'     => self::PAYLOAD_TTL_SECONDS
         ]);
     }
-    public function ping(\Base $f3)
+    public function ping(Base $f3)
     {
         $this->jsonOut($f3, 200, ['ok' => true, 'pong' => time()]);
     }
@@ -70,7 +73,7 @@ class Standalone extends User
      * Body(JSON): { "payload": "base64url(json)" }
      * Response: { ok:true, ticket, ttl, cid, ts }
      */
-    public function verify(\Base $f3)
+    public function verify(Base $f3)
     {
         $secret = (string)Config::getEnvironmentData('PF_STANDALONE_SECRET');
         if (strlen($secret) < 16) {
@@ -148,18 +151,20 @@ class Standalone extends User
             'cnf' => ['jkt' => $jkt],
         ], $pingSecret);
 
-        // ticket 발급 + 저장
-        $ticket = $this->b64url_encode(random_bytes(24)); // 대략 32 chars
-        if (!$this->ticket_put($ticket, $cid, $ts, self::TICKET_TTL_SECONDS)) {
-            $this->jsonOut($f3, 500, ['ok' => false, 'message' => 'Ticket store failed']);
-        }
+        // ticket: 서명된 payload (cid.iat.exp.nonce) — 1회성 검사는 WebSocket에서 nonce로 수행
+        $iatTicket = time();
+        $expTicket = $iatTicket + self::TICKET_TTL_SECONDS;
+        $ticketNonce = $this->b64url_encode(random_bytes(16));
+        $payloadRaw = $cid . '.' . $iatTicket . '.' . $expTicket . '.' . $ticketNonce;
+        $ticketSig = $this->b64url_encode(hash_hmac('sha256', $payloadRaw, $secret, true));
+        $ticket = $this->b64url_encode($payloadRaw) . '.' . $ticketSig;
 
         $this->jsonOut($f3, 200, [
             'ok'     => true,
             'ticket' => $ticket,
             'ttl'    => self::TICKET_TTL_SECONDS,
             'cid'    => $cid,
-            'ts'     => $ts,
+            'ts'     => $iatTicket,
             'ping_access_token' => $pingToken,
             'ping_expires_in'   => $pingExpSec
         ]);
@@ -185,7 +190,7 @@ class Standalone extends User
         return is_array($j) ? $j : null;
     }
 
-    private function jsonOut(\Base $f3, int $status, array $data)
+    private function jsonOut(Base $f3, int $status, array $data)
     {
         $f3->status($status);
         header('Content-Type: application/json; charset=utf-8');
