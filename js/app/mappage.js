@@ -244,6 +244,16 @@ define([
                                 Util.updateCurrentMapUserData(MsgWorkerMessage.data());
                                 ModuleMap.updateActiveMapUserData(mapModule);
                                 break;
+                            case 'combatAggregation.toast':
+                                let toastData = MsgWorkerMessage.data() || {};
+                                Util.showNotify({
+                                    title: '전투 기록 집계',
+                                    text: '전투 기록 집계가 시작되었습니다. 전투에 참가했다면 다클라 헬퍼를 켜 주세요.',
+                                    type: 'info',
+                                    hide: true,
+                                    delay: (toastData.expiresIn || 300) * 1000
+                                });
+                                break;
                         }
 
                         Util.setSyncStatus('ws:get');

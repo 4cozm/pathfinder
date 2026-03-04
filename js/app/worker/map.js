@@ -32,12 +32,15 @@ let initSocket = uri => {
             let response = JSON.parse(e.data);
 
             let MsgWorkerSend = new MsgWorker('ws:send');
-            MsgWorkerSend.task( response.task );
+            // 서버는 task 또는 type 필드로 메시지 타입을 전송함
+            // (standalone.hello, combatAggregation.toast 등은 type 필드 사용)
+            MsgWorkerSend.task( response.task || response.type || null );
             MsgWorkerSend.meta({
                 readyState: this.readyState,
-                characterIds: response.characterIds
+                characterIds: response.characterIds || null
             });
-            MsgWorkerSend.data( response.load );
+            // load가 없는 메시지(type-only)는 response 전체를 data로 넘겨 expiresIn 등 접근 가능
+            MsgWorkerSend.data( response.load !== undefined ? response.load : response );
 
             broadcastPorts(MsgWorkerSend);
         };
