@@ -380,4 +380,81 @@ class CharacterUpdate extends AbstractCron
             'elapsedMs' => $elapsedMs,
         ];
     }
+
+    /**
+     * 만료된 전투 집계 작업을 찾아 DISCORD_ALERT_WEBHOOK_URL로 임베드 전송.
+     * dmc_tasks:active SET을 조회한 뒤, dmc_tasks:{requestId}가 없으면(TTL 만료) 메타에서
+     * requesterName·기간을 읽어 웹훅 전송 후 active에서 제거.
+     *
+     * @param \Base $f3
+     * @return void
+     */
+    public function checkExpiredCombatAggregations(\Base $f3)
+    {
+        $dsn = (string)getenv('REDIS_DSN');
+        if ($dsn === '') {
+            return;
+        }
+        $webhookUrl = (string)getenv('DISCORD_ALERT_WEBHOOK_URL');
+        if ($webhookUrl === '') {
+            return;
+        }
+        try {
+            $redis = new \Predis\Client($dsn);
+            $activeIds = $redis->smembers('dmc_tasks:active');
+            if (!is_array($activeIds)) {
+                return;
+            }
+            foreach ($activeIds as $requestId) {
+                $requestId = (string)$requestId;
+                if ($requestId === '') {
+                    continue;
+                }
+                $taskKey = 'dmc_tasks:' . $requestId;
+                if ($redis->exists($taskKey)) {
+                    continue; // 아직 유효
+                }
+                $metaKey = 'dmc_tasks:meta:' . $requestId;
+                $metaRaw = $redis->get($metaKey);
+                $redis->del($metaKey);
+                $redis->srem('dmc_tasks:active', [$requestId]);
+
+                $meta = $metaRaw ? json_decode($metaRaw, true) : null;
+                $requesterName = is_array($meta) && isset($meta['requesterName']) ? (string)$meta['requesterName'] : '';
+                $startTime = is_array($meta) && isset($meta['startTime']) ? (string)$meta['startTime'] : '';
+                $endTime = is_array($meta) && isset($meta['endTime']) ? (string)$meta['endTime'] : '';
+
+                $embed = [
+                    'title' => '전투 로그 집계 완료',
+                    'description' => '5분 집계 구간이 종료되었습니다.',
+                    'color' => 0x57f287,
+                    'timestamp' => date('c'),
+                    'fields' => [],
+                ];
+                if ($requesterName !== '') {
+                    $embed['fields'][] = ['name' => '요청자', 'value' => $requesterName, 'inline' => true];
+                }
+                if ($startTime !== '' || $endTime !== '') {
+                    $embed['fields'][] = [
+                        'name' => '집계 기간',
+                        'value' => $startTime . ' ~ ' . $endTime,
+                        'inline' => false,
+                    ];
+                }
+                $payload = json_encode(['embeds' => [$embed]], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+                $ctx = stream_context_create([
+                    'http' => [
+                        'method' => 'POST',
+                        'header' => "Content-Type: application/json\r\n",
+                        'content' => $payload,
+                        'timeout' => 10,
+                    ],
+                ]);
+                @file_get_contents($webhookUrl, false, $ctx);
+            }
+        } catch (\Throwable $e) {
+            error_log('[checkExpiredCombatAggregations] ' . $e->getMessage());
+        }
+    }
 }

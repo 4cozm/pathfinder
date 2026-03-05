@@ -10,7 +10,7 @@ use Exodus4D\Pathfinder\Lib\Config;
  * Discord 백엔드가 호출하는 전투 로그 집계 요청 API.
  * POST /api/CombatAggregation/request
  * Header: X-Signature: HMAC-SHA256(raw_body, DISCORD_TO_PF_HMAC)
- * Body: { "startTime": "...", "endTime": "..." } (KST 기준, ISO8601 또는 Unix timestamp)
+ * Body: { "startTime": "...", "endTime": "...", "requesterName": "..." } (KST 기준, ISO8601 또는 Unix timestamp)
  */
 class CombatAggregation extends Controller
 {
@@ -52,8 +52,10 @@ class CombatAggregation extends Controller
             return;
         }
 
-        $startTime = $body['startTime'] ?? null;
-        $endTime   = $body['endTime']   ?? null;
+        $startTime     = $body['startTime'] ?? null;
+        $endTime       = $body['endTime']   ?? null;
+        $requesterName = isset($body['requesterName']) ? (string)$body['requesterName'] : '';
+
         if ($startTime === null || $endTime === null) {
             $this->jsonOut($f3, 400, ['ok' => false, 'message' => 'Missing startTime or endTime']);
             return;
@@ -62,8 +64,8 @@ class CombatAggregation extends Controller
         $requestId = $this->generateUuidV4();
         $now       = time();
 
-        // Redis 작업 리스트 저장
-        $this->storeDmcTask($requestId, $startTime, $endTime, $now);
+        // Redis 작업 리스트 저장 (메타는 만료 후 웹훅 전송용으로 별도 키에 보관)
+        $this->storeDmcTask($requestId, $startTime, $endTime, $now, $requesterName);
 
         // WS 서버에 브로드캐스트 트리거 (TCP → MapUpdate::receiveData)
         $this->triggerCombatAggregationStartViaSocket($f3, $requestId, $startTime, $endTime);
@@ -90,10 +92,13 @@ class CombatAggregation extends Controller
 
     /**
      * Redis에 dmc_helper 작업 저장.
-     * dmc_tasks:{requestId} → JSON, TTL = EXPIRES_IN + 60(여유)
-     * dmc_tasks:active      → SET, 활성 requestId 인덱스
+     * dmc_tasks:{requestId}   → JSON, TTL = EXPIRES_IN + 60(여유)
+     * dmc_tasks:meta:{requestId} → JSON(요청자·기간), 만료 후 웹훅 전송용, TTL = EXPIRES_IN + 600
+     * dmc_tasks:active        → SET, 활성 requestId 인덱스
+     *
+     * @param string $requesterName Discord 호출자 이름 (웹훅 임베드용)
      */
-    private function storeDmcTask(string $requestId, $startTime, $endTime, int $createdAt): void
+    private function storeDmcTask(string $requestId, $startTime, $endTime, int $createdAt, string $requesterName = ''): void
     {
         $dsn = (string)getenv('REDIS_DSN');
         if ($dsn === '') {
@@ -103,18 +108,22 @@ class CombatAggregation extends Controller
             $redis   = new \Predis\Client($dsn);
             $taskKey = 'dmc_tasks:' . $requestId;
             $payload = json_encode([
-                'requestId' => $requestId,
-                'startTime' => $startTime,
-                'endTime'   => $endTime,
-                'createdAt' => $createdAt,
+                'requestId'     => $requestId,
+                'startTime'     => $startTime,
+                'endTime'       => $endTime,
+                'createdAt'     => $createdAt,
+                'requesterName' => $requesterName,
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
             // 작업 본문 저장 (TTL = 5분 + 60초 여유)
             $redis->setex($taskKey, self::EXPIRES_IN + 60, $payload);
 
+            // 만료 후 웹훅 전송 시 requesterName·기간 읽기용 메타 키 (TTL 더 김)
+            $metaKey = 'dmc_tasks:meta:' . $requestId;
+            $redis->setex($metaKey, self::EXPIRES_IN + 600, $payload);
+
             // 활성 작업 인덱스에 추가 (SET, TTL은 개별 키로 관리)
             $redis->sadd('dmc_tasks:active', [$requestId]);
-            // active SET 자체는 넉넉하게 유지 (만료된 항목은 조회 시 SREM)
             $redis->expire('dmc_tasks:active', self::EXPIRES_IN + 3600);
         } catch (\Throwable $e) {
             // 로그만 — Redis 실패는 API 응답에 영향 없음

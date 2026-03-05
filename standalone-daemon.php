@@ -126,6 +126,7 @@ while (true) {
     $tickIso = date('c');
 
     try {
+        $job->checkExpiredCombatAggregations($f3);
         $stats = $job->updateStandaloneTrackedLogs($f3);
 
         $tickMs = (int)round((microtime(true) - $tickStart) * 1000);
