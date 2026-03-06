@@ -1,0 +1,165 @@
+<section data-base="{{ @BASE }}">
+    <div class="container col-xs-12">
+        <div class="row"></div>
+        <h4><i class="fas fa-fw fa-users-cog"></i>&nbsp;유저 관계도</h4>
+        <div class="row text-center">
+            <div class="col-xs-12 pf-landing-pricing-panel">
+                <div class="panel panel-default pricing-big">
+                    <div class="panel-heading text-left">
+                        <h3 class="panel-title">발급 계정별 발견 캐릭터 (티켓 발급한 계정 → 해당 티켓에서 수집된 캐릭터)</h3>
+                    </div>
+                    <div class="panel-body">
+                        <p class="text-muted small pf-spydetect-loading">목록을 불러오는 중...</p>
+                        <div id="pf-spydetect-issuers" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+<script>
+(function() {
+    var section = document.querySelector('section[data-base]');
+    if (!section) return;
+    var base = section.getAttribute('data-base') || '';
+    var loading = section.querySelector('.pf-spydetect-loading');
+    var container = document.getElementById('pf-spydetect-issuers');
+
+    function esc(s) {
+        if (s == null || s === '') return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function loadIssuers() {
+        if (!container) return;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', base + 'admin/spydetect/data', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            if (loading) loading.style.display = 'none';
+            container.style.display = 'block';
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.ok && Array.isArray(res.issuers)) {
+                    container.innerHTML = '';
+                    res.issuers.forEach(function(issuer) {
+                        var issuerId = issuer.issuer_character_id;
+                        var label = (issuer.issuer_name || ('Character ' + issuerId)) + ' (' + issuer.detected_count + ')';
+                        var row = document.createElement('div');
+                        row.className = 'pf-spydetect-issuer-row';
+                        row.setAttribute('data-issuer-id', String(issuerId));
+                        var head = document.createElement('div');
+                        head.className = 'pf-spydetect-issuer-head';
+                        head.style.cursor = 'pointer';
+                        head.style.padding = '8px 0';
+                        head.style.borderBottom = '1px solid #eee';
+                        head.innerHTML = '<i class="fas fa-fw fa-chevron-right pf-spydetect-chevron"></i> ' + esc(label);
+                        head.addEventListener('click', function() { toggleIssuer(issuerId, head, row); });
+                        row.appendChild(head);
+                        var body = document.createElement('div');
+                        body.className = 'pf-spydetect-issuer-body';
+                        body.style.display = 'none';
+                        body.style.paddingLeft = '20px';
+                        body.style.paddingTop = '8px';
+                        body.style.paddingBottom = '8px';
+                        row.appendChild(body);
+                        container.appendChild(row);
+                    });
+                }
+            } catch (e) {}
+        };
+        xhr.send();
+    }
+
+    function toggleIssuer(issuerId, head, row) {
+        var body = row.querySelector('.pf-spydetect-issuer-body');
+        var chevron = row.querySelector('.pf-spydetect-chevron');
+        if (!body) return;
+        if (body.style.display === 'none') {
+            if (!body.hasAttribute('data-loaded')) {
+                loadIssuerCharacters(issuerId, body, function() {
+                    body.setAttribute('data-loaded', '1');
+                    body.style.display = 'block';
+                    if (chevron) chevron.className = 'fas fa-fw fa-chevron-down pf-spydetect-chevron';
+                });
+            } else {
+                body.style.display = 'block';
+                if (chevron) chevron.className = 'fas fa-fw fa-chevron-down pf-spydetect-chevron';
+            }
+        } else {
+            body.style.display = 'none';
+            if (chevron) chevron.className = 'fas fa-fw fa-chevron-right pf-spydetect-chevron';
+        }
+    }
+
+    function loadIssuerCharacters(issuerId, body, done) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', base + 'admin/spydetect/issuer/' + issuerId + '/characters', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.ok && Array.isArray(res.characters)) {
+                    var table = document.createElement('table');
+                    table.className = 'table table-striped table-bordered table-condensed';
+                    table.innerHTML =
+                        '<thead><tr><th>character id</th><th>name</th><th>corporation</th><th>updated_at</th><th></th></tr></thead><tbody></tbody>';
+                    var tbody = table.querySelector('tbody');
+                    res.characters.forEach(function(c) {
+                        var tr = document.createElement('tr');
+                        tr.setAttribute('data-character-id', String(c.character_id || ''));
+                        tr.innerHTML =
+                            '<td class="text-right">' + esc(String(c.character_id || '')) + '</td>' +
+                            '<td class="pf-spydetect-name">' + (c.name ? esc(c.name) : '<span class="text-muted">—</span>') + '</td>' +
+                            '<td class="pf-spydetect-corp">' + (c.corporation_name ? esc(c.corporation_name) : '<span class="text-muted">—</span>') + '</td>' +
+                            '<td class="pf-spydetect-updated">' + esc(String(c.updated_at || '')) + '</td>' +
+                            '<td><button type="button" class="btn btn-xs btn-default pf-spydetect-enrich">조회</button></td>';
+                        tbody.appendChild(tr);
+                    });
+                    body.appendChild(table);
+                    body.querySelectorAll('.pf-spydetect-enrich').forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            var tr = btn.closest('tr');
+                            var id = tr ? tr.getAttribute('data-character-id') : null;
+                            if (id) enrichOne(id, tr, btn);
+                        });
+                    });
+                }
+            } catch (e) {}
+            if (typeof done === 'function') done();
+        };
+        xhr.onerror = function() { if (typeof done === 'function') done(); };
+        xhr.send();
+    }
+
+    function enrichOne(characterId, tr, btn) {
+        if (!tr || !btn) return;
+        btn.disabled = true;
+        btn.textContent = '...';
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', base + 'admin/spydetect/enrich/' + characterId, true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            btn.disabled = false;
+            btn.textContent = '조회';
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.ok) {
+                    var nameCell = tr.querySelector('.pf-spydetect-name');
+                    var corpCell = tr.querySelector('.pf-spydetect-corp');
+                    var updatedCell = tr.querySelector('.pf-spydetect-updated');
+                    if (nameCell) nameCell.textContent = res.name || '—';
+                    if (corpCell) corpCell.textContent = res.corporation_name || '—';
+                    if (updatedCell) updatedCell.textContent = res.updated_at || '';
+                }
+            } catch (e) {}
+        };
+        xhr.onerror = function() { btn.disabled = false; btn.textContent = '조회'; };
+        xhr.send();
+    }
+
+    loadIssuers();
+})();
+</script>

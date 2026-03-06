@@ -4,6 +4,10 @@
  * User: Exodus 4D
  * Date: 12.05.2017
  * Time: 20:30
+ *
+ * Note: Uses Fat-Free Framework (F3) and Cortex ORM. Many intelephense "Undefined property/type" warnings
+ * are false positives: \Template and \Log are F3 globals; model instances get dynamic properties (id, _id,
+ * name, roleId, rightId, etc.) from the ORM. Runtime behavior is correct.
  */
 
 namespace Exodus4D\Pathfinder\Controller;
@@ -178,6 +182,21 @@ class Admin extends Controller{
                     }
                     $this->initMaps($f3, $character);
                     break;
+                case 'spydetect':
+                    if (isset($parts[1]) && $parts[1] === 'data') {
+                        $this->spydetectData($f3);
+                        return;
+                    }
+                    if (isset($parts[1]) && $parts[1] === 'issuer' && isset($parts[2]) && ctype_digit($parts[2]) && isset($parts[3]) && $parts[3] === 'characters') {
+                        $this->spydetectIssuerCharacters($f3, (int)$parts[2]);
+                        return;
+                    }
+                    if (isset($parts[1]) && $parts[1] === 'enrich' && isset($parts[2]) && ctype_digit($parts[2])) {
+                        $this->spydetectEnrich($f3, (int)$parts[2]);
+                        return;
+                    }
+                    $this->initSpydetect($f3);
+                    break;
                 case 'login':
                 default:
                     $f3->set('tplPage', 'login');
@@ -199,7 +218,7 @@ class Admin extends Controller{
         if($corporationId && $defaultRole){
             $corporations = $this->getAccessibleCorporations($character);
             foreach($corporations as $corporation){
-                if($corporation->_id === $corporationId){
+                if((int)$corporation->id === $corporationId){
                     // character has access to that corporation -> create/update/delete rights...
                     if($corporationRightsData = (array)$settings['rights']){
                         // get existing corp rights
@@ -441,6 +460,203 @@ class Admin extends Controller{
         }
 
         return $corporations;
+    }
+
+    /**
+     * init 유저 관계도(spydetect) page — 데이터는 JS가 /admin/spydetect/data 로 조회
+     * @param \Base $f3
+     */
+    protected function initSpydetect(\Base $f3): void
+    {
+        // no server-side data; template + JS fetch /admin/spydetect/data
+    }
+
+    /**
+     * GET /admin/spydetect/data — 발급 계정(issuer)별 건수. JSON { ok, issuers: [ { issuer_character_id, issuer_name?, detected_count } ] }
+     * @param \Base $f3
+     */
+    protected function spydetectData(\Base $f3): void
+    {
+        $db = $this->getDB();
+        if (!$db) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'issuers' => []], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $logRows = $db->exec(
+            'SELECT issuer_character_id, COUNT(*) AS detected_count FROM standalone_detect_log GROUP BY issuer_character_id ORDER BY detected_count DESC'
+        );
+        if (empty($logRows)) {
+            $f3->status(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => true, 'issuers' => []], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $issuerIds = array_map(function ($r) { return (int)$r['issuer_character_id']; }, $logRows);
+        $placeholders = implode(',', array_fill(0, count($issuerIds), '?'));
+        $nameRows = $db->exec('SELECT id, name FROM character WHERE id IN (' . $placeholders . ')', $issuerIds);
+        $namesById = [];
+        foreach ($nameRows ?: [] as $r) {
+            $namesById[(int)$r['id']] = $r['name'] ?? '';
+        }
+        $issuers = [];
+        foreach ($logRows as $row) {
+            $issuerId = (int)$row['issuer_character_id'];
+            $issuers[] = [
+                'issuer_character_id' => $issuerId,
+                'issuer_name'         => $namesById[$issuerId] ?? '',
+                'detected_count'      => (int)$row['detected_count'],
+            ];
+        }
+        $f3->status(200);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => true, 'issuers' => $issuers], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    /**
+     * GET /admin/spydetect/issuer/{issuer_character_id}/characters — 해당 발급 계정에서 발견된 캐릭터 목록
+     * @param \Base $f3
+     * @param int $issuerId
+     */
+    protected function spydetectIssuerCharacters(\Base $f3, int $issuerId): void
+    {
+        $db = $this->getDB();
+        if (!$db) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'characters' => []], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $issuerName = '';
+        $charRows = $db->exec('SELECT id, name FROM character WHERE id = :id', [':id' => $issuerId]);
+        if (!empty($charRows)) {
+            $issuerName = $charRows[0]['name'] ?? '';
+        }
+        if ($issuerName === '') {
+            try {
+                $sso = new Sso();
+                $charData = $sso->getCharacterData($issuerId);
+                $issuerName = isset($charData->character['name']) ? (string)$charData->character['name'] : '';
+            } catch (\Throwable $e) {
+                $issuerName = 'Character ' . $issuerId;
+            }
+        }
+        $rows = $db->exec(
+            'SELECT l.detected_character_id AS character_id, c.name, c.corporation_id, c.corporation_name, l.updated_at ' .
+            'FROM standalone_detect_log l LEFT JOIN standalone_detect_characters c ON c.character_id = l.detected_character_id ' .
+            'WHERE l.issuer_character_id = :issuer ORDER BY l.updated_at DESC',
+            [':issuer' => $issuerId]
+        );
+        $characters = [];
+        foreach ($rows ?: [] as $row) {
+            $characters[] = [
+                'character_id'      => (int)$row['character_id'],
+                'name'              => $row['name'] ?? '',
+                'corporation_id'    => isset($row['corporation_id']) ? (int)$row['corporation_id'] : null,
+                'corporation_name'  => $row['corporation_name'] ?? '',
+                'updated_at'        => $row['updated_at'] ?? '',
+            ];
+        }
+        $f3->status(200);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'ok'                   => true,
+            'issuer_character_id'  => $issuerId,
+            'issuer_name'          => $issuerName,
+            'characters'           => $characters,
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    /**
+     * GET /admin/spydetect/enrich/{character_id} — ESI로 보강 후 DB 갱신, JSON 반환
+     * @param \Base $f3
+     * @param int $characterId
+     */
+    protected function spydetectEnrich(\Base $f3, int $characterId): void
+    {
+        $db = $this->getDB();
+        if (!$db) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'message' => 'DB unavailable'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $existing = $db->exec(
+            'SELECT character_id, name, corporation_id, corporation_name, updated_at FROM standalone_detect_characters WHERE character_id = :cid',
+            [':cid' => $characterId]
+        );
+        $row = isset($existing[0]) ? $existing[0] : null;
+        if (!$row) {
+            $f3->status(404);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'message' => 'Character not in list'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $name = $row['name'] ?? '';
+        $corporationName = $row['corporation_name'] ?? '';
+        if ($name !== '' && $corporationName !== '') {
+            $f3->status(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'ok'               => true,
+                'character_id'     => (int)$row['character_id'],
+                'name'             => $name,
+                'corporation_id'   => isset($row['corporation_id']) ? (int)$row['corporation_id'] : null,
+                'corporation_name' => $corporationName,
+                'updated_at'       => $row['updated_at'] ?? '',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        try {
+            $sso = new Sso();
+            $charData = $sso->getCharacterData($characterId);
+            $name = isset($charData->character['name']) ? (string)$charData->character['name'] : '';
+            $corporationId = null;
+            $corporationName = '';
+            if ($charData->corporation !== null) {
+                $corporationId = (int)$charData->corporation->_id;
+                $corporationName = (string)$charData->corporation->name;
+            }
+            $db->exec(
+                'UPDATE standalone_detect_characters SET name = :name, corporation_id = :cid, corporation_name = :cname, updated_at = NOW() WHERE character_id = :charid',
+                [
+                    ':name'   => $name,
+                    ':cid'    => $corporationId,
+                    ':cname'  => $corporationName,
+                    ':charid' => $characterId,
+                ]
+            );
+            $updated = $db->exec(
+                'SELECT character_id, name, corporation_id, corporation_name, updated_at FROM standalone_detect_characters WHERE character_id = :cid',
+                [':cid' => $characterId]
+            );
+            $out = isset($updated[0]) ? $updated[0] : [
+                'character_id' => $characterId,
+                'name' => $name,
+                'corporation_id' => $corporationId,
+                'corporation_name' => $corporationName,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+            $f3->status(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'ok'               => true,
+                'character_id'     => (int)$out['character_id'],
+                'name'             => $out['name'] ?? '',
+                'corporation_id'   => isset($out['corporation_id']) ? (int)$out['corporation_id'] : null,
+                'corporation_name' => $out['corporation_name'] ?? '',
+                'updated_at'       => $out['updated_at'] ?? '',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        } catch (\Throwable $e) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
     }
 
 }
