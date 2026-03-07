@@ -130,16 +130,112 @@
                             '<td class="pf-spydetect-name">' + (c.name ? esc(c.name) : '<span class="text-muted">[Unknown: ' + esc(String(c.character_id || '')) + ']</span>') + '</td>' +
                             '<td class="pf-spydetect-corp">' + (c.corporation_name ? esc(c.corporation_name) : '<span class="text-muted">—</span>') + '</td>' +
                             '<td class="pf-spydetect-updated">' + esc(String(c.updated_at || '')) + '</td>' +
-                            '<td><button type="button" class="btn btn-xs btn-default pf-spydetect-enrich">조회</button></td>';
+                            '<td><button type="button" class="btn btn-xs btn-default pf-spydetect-enrich">조회</button> ' +
+                            '<button type="button" class="btn btn-xs btn-danger pf-spydetect-delete">삭제</button></td>';
                         tbody.appendChild(tr);
                     });
+                    var toolbar = document.createElement('div');
+                    toolbar.className = 'pf-spydetect-toolbar';
+                    toolbar.style.marginBottom = '10px';
+                    var delaySec = 2;
+                    function etaText(n) {
+                        if (n <= 0) return '';
+                        var s = n * delaySec;
+                        if (s >= 60) return '약 ' + Math.ceil(s / 60) + '분';
+                        return '약 ' + s + '초';
+                    }
+                    function emptyIds() {
+                        var rows = body.querySelectorAll('tr[data-character-id]');
+                        var ids = [];
+                        rows.forEach(function(tr) {
+                            var nameCell = tr.querySelector('.pf-spydetect-name');
+                            var corpCell = tr.querySelector('.pf-spydetect-corp');
+                            var nameEmpty = !nameCell || nameCell.textContent.indexOf('Unknown') !== -1 || nameCell.textContent.trim() === '';
+                            var corpEmpty = !corpCell || corpCell.textContent.indexOf('—') !== -1 || corpCell.textContent.trim() === '';
+                            if (nameEmpty || corpEmpty) ids.push(tr.getAttribute('data-character-id'));
+                        });
+                        return ids;
+                    }
+                    function allIds() {
+                        var rows = body.querySelectorAll('tr[data-character-id]');
+                        var ids = [];
+                        rows.forEach(function(tr) { ids.push(tr.getAttribute('data-character-id')); });
+                        return ids;
+                    }
+                    function updateButtonLabels() {
+                        var eCount = emptyIds().length;
+                        var aCount = allIds().length;
+                        btnEmpty.textContent = '빈 유저 전체 조회 (' + eCount + '명, ' + etaText(eCount) + ')';
+                        btnAll.textContent = '모든 유저 조회 (' + aCount + '명, ' + etaText(aCount) + ')';
+                    }
+                    var btnEmpty = document.createElement('button');
+                    btnEmpty.type = 'button';
+                    btnEmpty.className = 'btn btn-xs btn-default pf-spydetect-batch-empty';
+                    var btnAll = document.createElement('button');
+                    btnAll.type = 'button';
+                    btnAll.className = 'btn btn-xs btn-default pf-spydetect-batch-all';
+                    var progressSpan = document.createElement('span');
+                    progressSpan.className = 'pf-spydetect-progress text-muted small';
+                    progressSpan.style.marginLeft = '10px';
+                    toolbar.appendChild(btnEmpty);
+                    toolbar.appendChild(btnAll);
+                    toolbar.appendChild(progressSpan);
+                    updateButtonLabels();
+                    body.appendChild(toolbar);
                     body.appendChild(table);
+                    body.setAttribute('data-issuer-id', String(issuerId));
                     body.querySelectorAll('.pf-spydetect-enrich').forEach(function(btn) {
                         btn.addEventListener('click', function() {
                             var tr = btn.closest('tr');
                             var id = tr ? tr.getAttribute('data-character-id') : null;
                             if (id) enrichOne(id, tr, btn);
                         });
+                    });
+                    body.querySelectorAll('.pf-spydetect-delete').forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            var tr = btn.closest('tr');
+                            var cid = tr ? tr.getAttribute('data-character-id') : null;
+                            var iid = body.getAttribute('data-issuer-id');
+                            if (cid && iid) deleteOne(parseInt(iid, 10), parseInt(cid, 10), tr, btn);
+                        });
+                    });
+                    function runBatch(characterIds) {
+                        if (characterIds.length === 0) return;
+                        btnEmpty.disabled = true;
+                        btnAll.disabled = true;
+                        var total = characterIds.length;
+                        for (var i = 0; i < total; i++) {
+                            (function(idx) {
+                                setTimeout(function() {
+                                    var id = characterIds[idx];
+                                    var tr = body.querySelector('tr[data-character-id="' + id + '"]');
+                                    var enrichBtn = tr ? tr.querySelector('.pf-spydetect-enrich') : null;
+                                    if (tr && enrichBtn) enrichOne(id, tr, enrichBtn);
+                                    var remaining = total - idx - 1;
+                                    progressSpan.textContent = (idx + 1) + ' / ' + total + ' 완료' + (remaining > 0 ? ', 약 ' + (remaining * delaySec) + '초 남음' : '');
+                                    if (idx === total - 1) {
+                                        setTimeout(function() {
+                                            progressSpan.textContent = '완료';
+                                            btnEmpty.disabled = false;
+                                            btnAll.disabled = false;
+                                            updateButtonLabels();
+                                        }, 500);
+                                    }
+                                }, idx * (delaySec * 1000));
+                            })(i);
+                        }
+                    }
+                    btnEmpty.addEventListener('click', function() {
+                        var ids = emptyIds();
+                        if (ids.length === 0) { progressSpan.textContent = '빈 유저 없음'; return; }
+                        progressSpan.textContent = '0 / ' + ids.length + ' 완료, 약 ' + (ids.length * delaySec) + '초 남음';
+                        runBatch(ids);
+                    });
+                    btnAll.addEventListener('click', function() {
+                        var ids = allIds();
+                        if (ids.length === 0) { progressSpan.textContent = '대상 없음'; return; }
+                        progressSpan.textContent = '0 / ' + ids.length + ' 완료, 약 ' + (ids.length * delaySec) + '초 남음';
+                        runBatch(ids);
                     });
                 }
             } catch (e) {}
@@ -172,6 +268,23 @@
             } catch (e) {}
         };
         xhr.onerror = function() { btn.disabled = false; btn.textContent = '조회'; };
+        xhr.send();
+    }
+
+    function deleteOne(issuerId, characterId, tr, btn) {
+        if (!tr || !btn) return;
+        btn.disabled = true;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', base + 'admin/spydetect/issuer/' + issuerId + '/character/' + characterId + '/delete', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            btn.disabled = false;
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.ok && tr.parentNode) tr.parentNode.removeChild(tr);
+            } catch (e) {}
+        };
+        xhr.onerror = function() { btn.disabled = false; };
         xhr.send();
     }
 

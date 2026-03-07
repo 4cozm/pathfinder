@@ -195,6 +195,12 @@ class Admin extends Controller{
                         $this->spydetectEnrich($f3, (int)$parts[2]);
                         return;
                     }
+                    if (isset($parts[1]) && $parts[1] === 'issuer' && isset($parts[2]) && ctype_digit($parts[2])
+                        && isset($parts[3]) && $parts[3] === 'character' && isset($parts[4]) && ctype_digit($parts[4])
+                        && isset($parts[5]) && $parts[5] === 'delete') {
+                        $this->spydetectDeleteCharacter($f3, (int)$parts[2], (int)$parts[4]);
+                        return;
+                    }
                     $this->initSpydetect($f3);
                     break;
                 case 'login':
@@ -676,6 +682,45 @@ class Admin extends Controller{
                 'corporation_name' => $out['corporation_name'] ?? '',
                 'updated_at'       => $out['updated_at'] ?? '',
             ], JSON_UNESCAPED_UNICODE);
+            exit;
+        } catch (\Throwable $e) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    }
+
+    /**
+     * GET /admin/spydetect/issuer/{issuerId}/character/{characterId}/delete — 관계 삭제 후 고아면 standalone_detect_characters에서도 삭제
+     * @param \Base $f3
+     * @param int $issuerId
+     * @param int $characterId
+     */
+    protected function spydetectDeleteCharacter(\Base $f3, int $issuerId, int $characterId): void
+    {
+        $db = $this->getDB();
+        if (!$db) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'message' => 'DB unavailable'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        try {
+            $db->exec(
+                'DELETE FROM standalone_detect_log WHERE issuer_character_id = :issuer AND detected_character_id = :char',
+                [':issuer' => $issuerId, ':char' => $characterId]
+            );
+            $remaining = $db->exec(
+                'SELECT 1 FROM standalone_detect_log WHERE detected_character_id = :char LIMIT 1',
+                [':char' => $characterId]
+            );
+            if (empty($remaining)) {
+                $db->exec('DELETE FROM standalone_detect_characters WHERE character_id = :char', [':char' => $characterId]);
+            }
+            $f3->status(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             exit;
         } catch (\Throwable $e) {
             $f3->status(500);
