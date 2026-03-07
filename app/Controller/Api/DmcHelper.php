@@ -67,6 +67,34 @@ class DmcHelper extends Controller
             // Redis 등 없으면 무시
         }
 
+        // 버전 등록 성공 시 Discord 웹훅으로 임베드 알림 (선택)
+        $webhookUrl = (string)Config::getEnvironmentData('DISCORD_ALERT_WEBHOOK_URL');
+        if ($webhookUrl !== '') {
+            try {
+                $embed = [
+                    'title'       => 'dmc_helper 버전 등록 완료',
+                    'description' => '백엔드에 최소 버전이 성공적으로 반영되었습니다.',
+                    'color'       => 0x57f287,
+                    'timestamp'   => date('c'),
+                    'fields'      => [
+                        ['name' => '버전', 'value' => $version, 'inline' => true],
+                    ],
+                ];
+                $payload = json_encode(['embeds' => [$embed]], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                $ctx = stream_context_create([
+                    'http' => [
+                        'method'  => 'POST',
+                        'header'  => "Content-Type: application/json\r\n",
+                        'content' => $payload,
+                        'timeout' => 10,
+                    ],
+                ]);
+                @file_get_contents($webhookUrl, false, $ctx);
+            } catch (\Throwable $e) {
+                // 웹훅 실패 시에도 API 응답에는 영향 없음
+            }
+        }
+
         $this->jsonOut($f3, 200, ['ok' => true, 'version' => $version]);
     }
 
