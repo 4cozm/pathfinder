@@ -22,6 +22,8 @@
     var section = document.querySelector('section[data-base]');
     if (!section) return;
     var base = section.getAttribute('data-base') || '';
+    if (base && !/\/$/.test(base)) base = base + '/';
+    if (!base) base = '/';
     var loading = section.querySelector('.pf-spydetect-loading');
     var container = document.getElementById('pf-spydetect-issuers');
 
