@@ -68,7 +68,7 @@ class DmcHelper extends Controller
         }
 
         // 버전 등록 성공 시 Discord 웹훅으로 임베드 알림 (선택)
-        $webhookUrl = (string)Config::getEnvironmentData('DISCORD_ALERT_WEBHOOK_URL');
+        $webhookUrl = (string)Config::getEnvironmentData('DISCORD_WEBHOOK_IT_PING');
         if ($webhookUrl !== '') {
             try {
                 $embed = [
