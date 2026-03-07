@@ -3,6 +3,7 @@
 namespace Exodus4D\Pathfinder\Controller\Api;
 
 use Base;
+use Exodus4D\Pathfinder\Lib\Config;
 
 class DmcHelper extends \Exodus4D\Pathfinder\Controller\Controller
 {
@@ -17,8 +18,8 @@ class DmcHelper extends \Exodus4D\Pathfinder\Controller\Controller
             return;
         }
 
-        $expectedHtml = getenv('DISCORD_TO_PF_HMAC');
-        if (trim($data['secret']) !== trim($expectedHtml)) {
+        $expectedSecret = Config::getEnvironmentData('DISCORD_TO_PF_HMAC');
+        if (trim((string)$data['secret']) !== trim((string)$expectedSecret)) {
             header('Content-Type: application/json');
             echo json_encode(['ok' => false, 'code' => 'invalid_secret']);
             return;
@@ -29,8 +30,8 @@ class DmcHelper extends \Exodus4D\Pathfinder\Controller\Controller
         // F3 Cache 모듈을 활용 (보통 Redis로 묶임)
         \Cache::instance()->set('dmchelper_min_version', $version, 0); // 0 = ttl 무한
 
-        // 버전 수신 시 Discord 알림 (DISCORD_ALERT_WEBHOOK_URL 설정 시)
-        $webhookUrl = (string) getenv('DISCORD_ALERT_WEBHOOK_URL');
+        // 버전 수신 시 Discord 알림 (environment.ini 또는 컨테이너 env의 DISCORD_ALERT_WEBHOOK_URL)
+        $webhookUrl = (string) (Config::getEnvironmentData('DISCORD_ALERT_WEBHOOK_URL') ?? '');
         if ($webhookUrl !== '') {
             $embed = [
                 'title' => '다클라 헬퍼 버전 등록',
