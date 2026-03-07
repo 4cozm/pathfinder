@@ -525,7 +525,19 @@ class Admin extends Controller{
         }
         $issuerIds = array_map(function ($r) { return (int)$r['issuer_character_id']; }, $logRows);
         $placeholders = implode(',', array_fill(0, count($issuerIds), '?'));
-        $nameRows = $db->exec('SELECT id, name FROM character WHERE id IN (' . $placeholders . ')', $issuerIds);
+        try {
+            $nameRows = $db->exec('SELECT id, name FROM `character` WHERE id IN (' . $placeholders . ')', $issuerIds);
+        } catch (\Throwable $e) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'ok'      => false,
+                'issuers' => [],
+                'hint'    => 'DB error reading character names.',
+                'error'   => $e->getMessage(),
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         $namesById = [];
         foreach ($nameRows ?: [] as $r) {
             $namesById[(int)$r['id']] = $r['name'] ?? '';

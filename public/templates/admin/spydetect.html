@@ -24,6 +24,7 @@
     var base = section.getAttribute('data-base') || '';
     if (base && !/\/$/.test(base)) base = base + '/';
     if (!base) base = '/';
+    var apiRoot = '/';
     var loading = section.querySelector('.pf-spydetect-loading');
     var container = document.getElementById('pf-spydetect-issuers');
 
@@ -37,7 +38,7 @@
     function loadIssuers() {
         if (!container) return;
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', base + 'admin/spydetect/data', true);
+        xhr.open('GET', apiRoot + 'admin/spydetect/data', true);
         xhr.setRequestHeader('Accept', 'application/json');
         xhr.onload = function() {
             if (loading) loading.style.display = 'none';
@@ -113,7 +114,7 @@
 
     function loadIssuerCharacters(issuerId, body, done) {
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', base + 'admin/spydetect/issuer/' + issuerId + '/characters', true);
+        xhr.open('GET', apiRoot + 'admin/spydetect/issuer/' + issuerId + '/characters', true);
         xhr.setRequestHeader('Accept', 'application/json');
         xhr.onload = function() {
             try {
@@ -252,7 +253,7 @@
         btn.disabled = true;
         btn.textContent = '...';
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', base + 'admin/spydetect/enrich/' + characterId, true);
+        xhr.open('GET', apiRoot + 'admin/spydetect/enrich/' + characterId, true);
         xhr.setRequestHeader('Accept', 'application/json');
         xhr.onload = function() {
             btn.disabled = false;
@@ -277,7 +278,7 @@
         if (!tr || !btn) return;
         btn.disabled = true;
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', base + 'admin/spydetect/issuer/' + issuerId + '/character/' + characterId + '/delete', true);
+        xhr.open('GET', apiRoot + 'admin/spydetect/issuer/' + issuerId + '/character/' + characterId + '/delete', true);
         xhr.setRequestHeader('Accept', 'application/json');
         xhr.onload = function() {
             btn.disabled = false;
