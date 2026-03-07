@@ -127,7 +127,7 @@
                         tr.setAttribute('data-character-id', String(c.character_id || ''));
                         tr.innerHTML =
                             '<td class="text-right">' + esc(String(c.character_id || '')) + '</td>' +
-                            '<td class="pf-spydetect-name">' + (c.name ? esc(c.name) : '<span class="text-muted">—</span>') + '</td>' +
+                            '<td class="pf-spydetect-name">' + (c.name ? esc(c.name) : '<span class="text-muted">[Unknown: ' + esc(String(c.character_id || '')) + ']</span>') + '</td>' +
                             '<td class="pf-spydetect-corp">' + (c.corporation_name ? esc(c.corporation_name) : '<span class="text-muted">—</span>') + '</td>' +
                             '<td class="pf-spydetect-updated">' + esc(String(c.updated_at || '')) + '</td>' +
                             '<td><button type="button" class="btn btn-xs btn-default pf-spydetect-enrich">조회</button></td>';

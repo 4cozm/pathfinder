@@ -568,8 +568,10 @@ class Admin extends Controller{
             }
         }
         $rows = $db->exec(
-            'SELECT l.detected_character_id AS character_id, c.name, c.corporation_id, c.corporation_name, l.updated_at ' .
-            'FROM standalone_detect_log l LEFT JOIN standalone_detect_characters c ON c.character_id = l.detected_character_id ' .
+            'SELECT l.detected_character_id AS character_id, COALESCE(NULLIF(c.name, \'\'), pc.name) AS name, COALESCE(c.corporation_id, pc.corporationId) AS corporation_id, c.corporation_name, l.updated_at ' .
+            'FROM standalone_detect_log l ' .
+            'LEFT JOIN standalone_detect_characters c ON c.character_id = l.detected_character_id ' .
+            'LEFT JOIN `character` pc ON pc.id = l.detected_character_id ' .
             'WHERE l.issuer_character_id = :issuer ORDER BY l.updated_at DESC',
             [':issuer' => $issuerId]
         );
