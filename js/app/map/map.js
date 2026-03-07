@@ -1364,7 +1364,14 @@ define([
                 }
 
                 if(addNewConnection === true){
-                    drawConnection(mapConfig.map, connectionData).catch(console.warn);
+                    // Skip Jita connection (ESI: already-on-canvas block connection)
+                    let sourceSystemData = mapConfig.data.systems.find(s => s.id === connectionData.source);
+                    let targetSystemData = mapConfig.data.systems.find(s => s.id === connectionData.target);
+                    let isConnectionJita = (sourceSystemData && (sourceSystemData.systemId === 30000142 || sourceSystemData.name === 'Jita')) ||
+                        (targetSystemData && (targetSystemData.systemId === 30000142 || targetSystemData.name === 'Jita'));
+                    if(!isConnectionJita){
+                        drawConnection(mapConfig.map, connectionData).catch(console.warn);
+                    }
                 }
             }
 
@@ -1644,9 +1651,11 @@ define([
 
             // connect new system (if connection data is given)
             // -> Skip Jita connection (ESI logic might trigger this)
-            let isJita = systemData.systemId === 30000142 || systemData.name === 'Jita';
+            let isNewSystemJita = systemData.systemId === 30000142 || systemData.name === 'Jita';
+            let isSourceJita = connectedSystem && ($(connectedSystem).data('systemId') === 30000142 || $(connectedSystem).data('name') === 'Jita');
+            let skipJitaConnection = isNewSystemJita || isSourceJita;
 
-            if(connectedSystem && !isJita){
+            if(connectedSystem && !skipJitaConnection){
                 // hint: "scope + type" might be changed automatically when it gets saved
                 // -> based on jump distance,..
                 connectionData = Object.assign({}, {
