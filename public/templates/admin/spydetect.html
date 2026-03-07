@@ -40,10 +40,25 @@
         xhr.onload = function() {
             if (loading) loading.style.display = 'none';
             container.style.display = 'block';
+            if (xhr.status >= 400) {
+                try {
+                    var err = JSON.parse(xhr.responseText);
+                    if (err.hint || err.error) {
+                        container.innerHTML = '<p class="text-danger small">' + (err.hint || err.error) + '</p>';
+                    }
+                } catch (e) {}
+                return;
+            }
             try {
                 var res = JSON.parse(xhr.responseText);
                 if (res.ok && Array.isArray(res.issuers)) {
                     container.innerHTML = '';
+                    if (res.issuers.length === 0 && res.hint) {
+                        var p = document.createElement('p');
+                        p.className = 'text-muted small';
+                        p.textContent = res.hint;
+                        container.appendChild(p);
+                    }
                     res.issuers.forEach(function(issuer) {
                         var issuerId = issuer.issuer_character_id;
                         var label = (issuer.issuer_name || ('Character ' + issuerId)) + ' (' + issuer.detected_count + ')';

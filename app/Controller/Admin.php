@@ -481,16 +481,40 @@ class Admin extends Controller{
         if (!$db) {
             $f3->status(500);
             header('Content-Type: application/json; charset=utf-8');
-            echo json_encode(['ok' => false, 'issuers' => []], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['ok' => false, 'issuers' => [], 'hint' => 'DB unavailable'], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        $logRows = $db->exec(
-            'SELECT issuer_character_id, COUNT(*) AS detected_count FROM standalone_detect_log GROUP BY issuer_character_id ORDER BY detected_count DESC'
-        );
+        try {
+            $logRows = $db->exec(
+                'SELECT issuer_character_id, COUNT(*) AS detected_count FROM standalone_detect_log GROUP BY issuer_character_id ORDER BY detected_count DESC'
+            );
+        } catch (\Throwable $e) {
+            $f3->status(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'ok'      => false,
+                'issuers' => [],
+                'hint'    => 'standalone_detect_log table missing or DB error. Run pf-migrate-standalone (see scripts/migrate-standalone-detect.sh).',
+                'error'   => $e->getMessage(),
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         if (empty($logRows)) {
+            $tableExists = false;
+            try {
+                $t = $db->exec("SHOW TABLES LIKE 'standalone_detect_log'");
+                $tableExists = !empty($t);
+            } catch (\Throwable $e) {
+                // ignore
+            }
             $f3->status(200);
             header('Content-Type: application/json; charset=utf-8');
-            echo json_encode(['ok' => true, 'issuers' => []], JSON_UNESCAPED_UNICODE);
+            echo json_encode([
+                'ok'           => true,
+                'issuers'      => [],
+                'table_exists' => $tableExists,
+                'hint'         => $tableExists ? 'No data yet. Bind from dmc_helper with Chatlogs UIDs to populate.' : 'Table missing. Run pf-migrate-standalone.',
+            ], JSON_UNESCAPED_UNICODE);
             exit;
         }
         $issuerIds = array_map(function ($r) { return (int)$r['issuer_character_id']; }, $logRows);
