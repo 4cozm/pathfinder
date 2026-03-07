@@ -28,15 +28,21 @@ class DmcHelper extends Controller
 
     /**
      * POST: 새 버전 등록. 시크릿 인증 후 파일 + Cache(Redis)에 기록.
+     * GET이 잘못 이 액션으로 라우팅된 경우(405 방지) getVersion으로 넘긴다.
      */
     public function version(Base $f3)
     {
+        if (strtoupper((string)($f3->get('VERB') ?? $_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'GET') {
+            $this->getVersion($f3);
+            return;
+        }
         $body = $this->readJsonBody();
         $version = is_array($body) ? trim((string)($body['version'] ?? '')) : '';
         $secret  = is_array($body) ? (string)($body['secret'] ?? '') : '';
 
         if ($version === '') {
-            $this->jsonOut($f3, 400, ['ok' => false, 'message' => 'Missing version']);
+            $this->jsonOut($f3, 400, ['ok' => false, 'code' => 'version_missing', 'message' => 'Missing version']);
+            return;
         }
 
         $expectSecret = (string)Config::getEnvironmentData('PF_DMC_HELPER_SECRET');
@@ -44,7 +50,8 @@ class DmcHelper extends Controller
             $expectSecret = (string)Config::getEnvironmentData('DISCORD_TO_PF_HMAC');
         }
         if (strlen($expectSecret) < 8 || !hash_equals($expectSecret, $secret)) {
-            $this->jsonOut($f3, 401, ['ok' => false, 'message' => 'Invalid secret']);
+            $this->jsonOut($f3, 401, ['ok' => false, 'code' => 'invalid_secret', 'message' => 'Invalid secret']);
+            return;
         }
 
         // 파일 기록
