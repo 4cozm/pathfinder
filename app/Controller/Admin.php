@@ -572,10 +572,15 @@ class Admin extends Controller{
             exit;
         }
         $issuerName = '';
-        $charRows = $db->exec('SELECT id, name FROM character WHERE id = :id', [':id' => $issuerId]);
-        if (!empty($charRows)) {
-            $issuerName = $charRows[0]['name'] ?? '';
+        try {
+            $charRows = $db->exec('SELECT id, name FROM `character` WHERE id = :id', [':id' => $issuerId]);
+            if (!empty($charRows)) {
+                $issuerName = $charRows[0]['name'] ?? '';
+            }
+        } catch (\Throwable $e) {
+            // ignore
         }
+
         if ($issuerName === '') {
             try {
                 $sso = new Sso();
@@ -585,31 +590,37 @@ class Admin extends Controller{
                 $issuerName = 'Character ' . $issuerId;
             }
         }
-        $rows = $db->exec(
-            'SELECT l.detected_character_id AS character_id, COALESCE(NULLIF(c.name, \'\'), pc.name) AS name, COALESCE(c.corporation_id, pc.corporationId) AS corporation_id, c.corporation_name, l.updated_at ' .
-            'FROM standalone_detect_log l ' .
-            'LEFT JOIN standalone_detect_characters c ON c.character_id = l.detected_character_id ' .
-            'LEFT JOIN `character` pc ON pc.id = l.detected_character_id ' .
-            'WHERE l.issuer_character_id = :issuer ORDER BY l.updated_at DESC',
-            [':issuer' => $issuerId]
-        );
         $characters = [];
-        foreach ($rows ?: [] as $row) {
-            $characters[] = [
-                'character_id'      => (int)$row['character_id'],
-                'name'              => $row['name'] ?? '',
-                'corporation_id'    => isset($row['corporation_id']) ? (int)$row['corporation_id'] : null,
-                'corporation_name'  => $row['corporation_name'] ?? '',
-                'updated_at'        => $row['updated_at'] ?? '',
-            ];
+        $errorMessage = null;
+        try {
+            $rows = $db->exec(
+                'SELECT l.detected_character_id AS character_id, COALESCE(NULLIF(c.name, \'\'), pc.name) AS name, COALESCE(c.corporation_id, pc.corporationId) AS corporation_id, c.corporation_name, l.updated_at ' .
+                'FROM standalone_detect_log l ' .
+                'LEFT JOIN standalone_detect_characters c ON c.character_id = l.detected_character_id ' .
+                'LEFT JOIN `character` pc ON pc.id = l.detected_character_id ' .
+                'WHERE l.issuer_character_id = :issuer ORDER BY l.updated_at DESC',
+                [':issuer' => $issuerId]
+            );
+            foreach ($rows ?: [] as $row) {
+                $characters[] = [
+                    'character_id'      => (int)$row['character_id'],
+                    'name'              => $row['name'] ?? '',
+                    'corporation_id'    => isset($row['corporation_id']) ? (int)$row['corporation_id'] : null,
+                    'corporation_name'  => $row['corporation_name'] ?? '',
+                    'updated_at'        => $row['updated_at'] ?? '',
+                ];
+            }
+        } catch (\Throwable $e) {
+            $errorMessage = $e->getMessage();
         }
-        $f3->status(200);
+        $f3->status($errorMessage ? 500 : 200);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
-            'ok'                   => true,
+            'ok'                   => !$errorMessage,
             'issuer_character_id'  => $issuerId,
             'issuer_name'          => $issuerName,
             'characters'           => $characters,
+            'hint'                 => $errorMessage,
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }

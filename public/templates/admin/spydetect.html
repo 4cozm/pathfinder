@@ -72,7 +72,9 @@
                         head.className = 'pf-spydetect-issuer-head';
                         head.style.cursor = 'pointer';
                         head.style.padding = '8px 0';
-                        head.style.borderBottom = '1px solid #eee';
+                        head.style.color = '#e2e2e2';
+                        head.style.fontWeight = 'bold';
+                        head.style.borderBottom = '1px solid #444';
                         head.innerHTML = '<i class="fas fa-fw fa-chevron-right pf-spydetect-chevron"></i> ' + esc(label);
                         head.addEventListener('click', function() { toggleIssuer(issuerId, head, row); });
                         row.appendChild(head);
@@ -119,8 +121,13 @@
         xhr.onload = function() {
             try {
                 var res = JSON.parse(xhr.responseText);
-                if (res.ok && Array.isArray(res.characters)) {
-                    var table = document.createElement('table');
+                if (!res.ok && res.hint) {
+                    body.innerHTML = '<p class="text-danger small" style="padding: 10px; margin: 0;">Error: ' + esc(res.hint) + '</p>';
+                } else if (res.ok && Array.isArray(res.characters)) {
+                    if (res.characters.length === 0) {
+                        body.innerHTML = '<p class="text-muted small" style="padding: 10px; margin: 0;">발견된 캐릭터가 없습니다.</p>';
+                    } else {
+                        var table = document.createElement('table');
                     table.className = 'table table-striped table-bordered table-condensed';
                     table.innerHTML =
                         '<thead><tr><th>character id</th><th>name</th><th>corporation</th><th>updated_at</th><th></th></tr></thead><tbody></tbody>';
@@ -186,6 +193,7 @@
                     updateButtonLabels();
                     body.appendChild(toolbar);
                     body.appendChild(table);
+                    } // end else for characters empty check
                     body.setAttribute('data-issuer-id', String(issuerId));
                     body.querySelectorAll('.pf-spydetect-enrich').forEach(function(btn) {
                         btn.addEventListener('click', function() {
