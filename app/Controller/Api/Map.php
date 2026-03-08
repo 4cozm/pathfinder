@@ -872,6 +872,25 @@ class Map extends Controller\AccessController {
                         }
                     }
 
+                    // check for "Jita" system (podded/self-destruct jump prevention) =============================
+                    // -> systemId 30000142 = Jita (most common home station in EVE Online)
+                    // -> do NOT auto-add systems or connections to/from Jita
+                    // -> prevents false connections caused by self-destruct and clone-jump to home station
+                    if(
+                        $sourceSystem->systemId === 30000142 ||
+                        $targetSystem->systemId === 30000142
+                    ){
+                        $addConnection = false;
+
+                        if($sourceSystem->systemId === 30000142){
+                            $addSourceSystem = false;
+                        }
+
+                        if($targetSystem->systemId === 30000142){
+                            $addTargetSystem = false;
+                        }
+                    }
+
                     // save source system =============================================================================
                     if(
                         $addSourceSystem &&
