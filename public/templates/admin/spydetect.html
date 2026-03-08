@@ -1,4 +1,88 @@
-<section data-base="{{ @BASE }}">
+<style>
+/* Custom Dark Theme overrides for SpyDetect */
+.pf-spydetect-wrapper .panel {
+    background-color: #2b2b2b;
+    border-color: #444;
+    color: #e2e2e2;
+}
+.pf-spydetect-wrapper .panel-heading {
+    background-color: #1f1f1f !important;
+    border-color: #444 !important;
+    color: #f5f5f5 !important;
+}
+.pf-spydetect-wrapper .panel-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #4fc3f7 !important;
+}
+.pf-spydetect-wrapper table.table {
+    background-color: #222 !important;
+    color: #e2e2e2 !important;
+    border: 1px solid #444 !important;
+    font-size: 14px;
+}
+.pf-spydetect-wrapper table.table th {
+    background-color: #1a1a1a !important;
+    color: #64b5f6 !important;
+    border-color: #444 !important;
+    border-bottom-width: 2px !important;
+    font-size: 15px;
+}
+.pf-spydetect-wrapper table.table td {
+    border-color: #444 !important;
+    vertical-align: middle !important;
+}
+.pf-spydetect-wrapper table.table-striped > tbody > tr:nth-of-type(odd) td {
+    background-color: #2b2b2b !important;
+}
+.pf-spydetect-wrapper table.table-striped > tbody > tr:nth-of-type(even) td {
+    background-color: #222 !important;
+}
+.pf-spydetect-wrapper table.table-striped > tbody > tr:hover td {
+    background-color: #3f3f3f !important;
+}
+
+.pf-spydetect-issuer-head {
+    font-size: 16px !important;
+    font-weight: bold;
+    color: #ffffff !important;
+    background-color: #333 !important;
+    padding: 12px 15px !important;
+    border-radius: 4px;
+    margin-bottom: 0px;
+    border: 1px solid #555 !important;
+    transition: background-color 0.2s;
+}
+.pf-spydetect-issuer-head:hover {
+    background-color: #444 !important;
+}
+.pf-spydetect-issuer-head i.fa-chevron-right, .pf-spydetect-issuer-head i.fa-chevron-down {
+    color: #64b5f6;
+}
+.pf-spydetect-issuer-body {
+    background-color: #1e1e1e !important;
+    padding: 15px !important;
+    border: 1px solid #444;
+    border-top: none;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    margin-bottom: 15px;
+}
+.pf-spydetect-wrapper select,
+.pf-spydetect-wrapper input,
+.pf-spydetect-wrapper button {
+    font-size: 13px;
+}
+.pf-spydetect-wrapper h4 {
+    color: #f5f5f5;
+    font-size: 20px;
+    margin-bottom: 20px;
+}
+.pf-spydetect-wrapper .text-muted {
+    color: #aaa !important;
+}
+</style>
+<section data-base="{{ @BASE }}" class="pf-spydetect-wrapper">
     <div class="container col-xs-12">
         <div class="row"></div>
         <h4><i class="fas fa-fw fa-users-cog"></i>&nbsp;유저 관계도</h4>
@@ -71,19 +155,12 @@
                         var head = document.createElement('div');
                         head.className = 'pf-spydetect-issuer-head';
                         head.style.cursor = 'pointer';
-                        head.style.padding = '8px 0';
-                        head.style.color = '#e2e2e2';
-                        head.style.fontWeight = 'bold';
-                        head.style.borderBottom = '1px solid #444';
                         head.innerHTML = '<i class="fas fa-fw fa-chevron-right pf-spydetect-chevron"></i> ' + esc(label);
                         head.addEventListener('click', function() { toggleIssuer(issuerId, head, row); });
                         row.appendChild(head);
                         var body = document.createElement('div');
                         body.className = 'pf-spydetect-issuer-body';
                         body.style.display = 'none';
-                        body.style.paddingLeft = '20px';
-                        body.style.paddingTop = '8px';
-                        body.style.paddingBottom = '8px';
                         row.appendChild(body);
                         container.appendChild(row);
                     });
