@@ -1375,25 +1375,21 @@ class CharacterModel extends AbstractPathfinderModel {
             }
         }
 
-        // [SECURITY BYPASS] 'Personal Rights'에 등록된 유저는 기본 맵(ID: 3)에 자동 접근 권한 부여
-        /** @var CharacterRightModel $crm */
-        $crm = self::getNew('CharacterRightModel');
-        if($crm->find(['characterId = ?', $this->_id], ['limit' => 1])){
-            /** @var MapModel $defaultMap */
-            $defaultMap = self::getNew('MapModel');
-            $defaultMap->getById(3);
-            if($defaultMap->valid() && $defaultMap->isActive()){
-                // 중복 추가 방지
-                $alreadyHasDefault = false;
-                foreach($maps as $m){
-                    if($m->_id === $defaultMap->_id){
-                        $alreadyHasDefault = true;
-                        break;
-                    }
+        // 로그인한 모든 캐릭터에게 기본 맵(ID: 3)에 자동 접근 권한 부여
+        /** @var MapModel $defaultMap */
+        $defaultMap = self::getNew('MapModel');
+        $defaultMap->getById(3);
+        if($defaultMap->valid() && $defaultMap->isActive()){
+            // 중복 추가 방지
+            $alreadyHasDefault = false;
+            foreach($maps as $m){
+                if($m->_id === $defaultMap->_id){
+                    $alreadyHasDefault = true;
+                    break;
                 }
-                if(!$alreadyHasDefault){
-                    $maps[] = $defaultMap;
-                }
+            }
+            if(!$alreadyHasDefault){
+                $maps[] = $defaultMap;
             }
         }
 
