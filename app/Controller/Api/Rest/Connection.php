@@ -142,7 +142,7 @@ class Connection extends AbstractRestController {
             $map = Pathfinder\AbstractPathfinderModel::getNew('MapModel');
             $map->getById($mapId);
             if($map->hasAccess($activeCharacter)){
-                if($map->hasRight($activeCharacter, 'map_delete')){
+                if($map->hasRight($activeCharacter, 'map_update')){
                     foreach($connectionIds as $connectionId){
                         if($connection = $map->getConnectionById($connectionId)){
                             if($connection->delete($activeCharacter)){
@@ -158,7 +158,7 @@ class Connection extends AbstractRestController {
                     }
                 }else{
                     $f3->set('HALT', true);
-                    $f3->error(401, sprintf('Character %s does not have sufficient rights for map delete', $activeCharacter->name));
+                    $f3->error(401, sprintf('Character %s does not have sufficient rights for map update', $activeCharacter->name));
                     return;
                 }
             }
