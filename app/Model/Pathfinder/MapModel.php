@@ -860,19 +860,12 @@ class MapModel extends AbstractMapTrackingModel {
      * @return bool
      */
     public function hasRight(CharacterModel $character, string $rightName) : bool {
-        // 1. 개인 권한(Personal Rights) 확인 - 가장 우선순위 높음
-        // 리스트에 등록되어 있고 active=1이면 true, active=0이면 false (강제 차단)
-        $personalRights = $character->getRights([$rightName], ['addInactive' => true]);
-        if(!empty($personalRights)){
-            /** @var CharacterRightModel $pr */
-            $pr = $personalRights[0];
-            // DB에 실제로 기록이 있는지 확인 (dry()가 false이면 기록이 있는 것)
-            if(!$pr->dry()){
-                return (bool)$pr->active;
-            }
+        // 0. 개인 맵(Private): 접근 권한이 있으면 해당 맵에서 수정/삭제 허용 (character_right 무관)
+        if($this->isPrivate() && $this->hasAccess($character)){
+            return true;
         }
 
-        // 2. 소속 코퍼레이션 권한 확인 (기존 패스파인더 보안 로직 유지)
+        // 1. 코퍼/연맹 맵: 조직 권한을 먼저 확인 (코퍼레이션 탭 설정 적용)
         if($this->isCorporation() || $this->isAlliance()){
             $org = ($this->isCorporation()) ? $character->getCorporation() : $character->getAlliance();
             if($org){
@@ -886,17 +879,30 @@ class MapModel extends AbstractMapTrackingModel {
                     $characterRole = $character->roleId;
 
                     if($requiredRole && $characterRole){
-                        // level이 높을수록(숫자가 클수록) 강력한 권한임
-                        // 멤버: 2, 매니저: 4, 슈퍼: 10
+                        // level이 높을수록(숫자가 클수록) 강력한 권한임 (멤버: 2, 매니저: 4, 슈퍼: 10)
                         if((int)$characterRole->level < (int)$requiredRole->level){
                             return false; // 권한 부족
                         }
+                        return true; // 역할 충분 → 코퍼 탭 설정대로 허용
                     }
                 }
             }
         }
 
-        // 개인 권한 설정도 없고, 조직 권한에서도 걸러지지 않은 경우 기본 접근권한(hasAccess) 확인
+        // 2. 개인 권한(Personal Rights): 명시적 차단만 적용 (기록 있고 active=0이면 거부)
+        $personalRights = $character->getRights([$rightName], ['addInactive' => true]);
+        if(!empty($personalRights)){
+            /** @var CharacterRightModel $pr */
+            $pr = $personalRights[0];
+            if(!$pr->dry() && !(bool)$pr->active){
+                return false; // DB에 기록이 있고 비활성 → 어드민에서 차단한 경우
+            }
+            if(!$pr->dry() && (bool)$pr->active){
+                return true; // DB에 기록이 있고 활성 → 개인 허용
+            }
+        }
+
+        // 3. 기본 접근권한(hasAccess) 확인
         return $this->hasAccess($character);
     }
 
