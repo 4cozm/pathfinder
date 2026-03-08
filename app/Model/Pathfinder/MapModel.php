@@ -860,6 +860,11 @@ class MapModel extends AbstractMapTrackingModel {
      * @return bool
      */
     public function hasRight(CharacterModel $character, string $rightName) : bool {
+        // map_delete 요청 시 map_update 권한이 있으면 삭제 허용 (연결/시스템 삭제는 수정 권한에 포함)
+        if($rightName === 'map_delete' && $this->hasRight($character, 'map_update')){
+            return true;
+        }
+
         // 0. 개인 맵(Private): 접근 권한이 있으면 해당 맵에서 수정/삭제 허용 (character_right 무관)
         if($this->isPrivate() && $this->hasAccess($character)){
             return true;
