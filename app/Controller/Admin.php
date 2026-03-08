@@ -19,6 +19,7 @@ use Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel;
 use Exodus4D\Pathfinder\Model\Pathfinder\CorporationModel;
 use Exodus4D\Pathfinder\Model\Pathfinder\MapModel;
 use Exodus4D\Pathfinder\Model\Pathfinder\RoleModel;
+use Exodus4D\Pathfinder\Model\Pathfinder\CharacterRightModel;
 
 class Admin extends Controller{
 
@@ -50,7 +51,7 @@ class Admin extends Controller{
         if($character = $this->getAdminCharacter($f3)){
             $f3->set('tplLogged', true);
             $f3->set('character', $character);
-            $this->dispatch($f3, $params, $character);
+            // dispatch() 호출 제거: F3의 라우팅 시스템이 자동으로 dispatch()를 호출하므로 여기서 호출하면 두 번 실행됨
         }
 
         $f3->set('tplAuthType', $f3->get('BASE') . $f3->alias( 'sso', ['action' => 'requestAdminAuthorization']));
@@ -95,7 +96,9 @@ class Admin extends Controller{
         if( !$f3->exists(Sso::SESSION_KEY_SSO_ERROR) ){
             if( $character = $this->getCharacter(0) ){
                 if(in_array($character->roleId->name, ['SUPER', 'CORPORATION'], true)){
-                    // current character is admin
+                    // [SECURITY] 현재 캐릭터가 DB상에서 SUPER 또는 CORPORATION 권한을 가지고 있음
+                    // CharacterModel->getRole()에서 EVE 인게임 직책에 의한 자동 승격 로직을 제거했으므로,
+                    // 여기에 도달하는 캐릭터는 오직 pathfinder.ini에 명시되었거나 DB에서 수동으로 격승된 인원뿐임
                     $adminCharacter = $character;
                 }elseif( !$character->hasAdminScopes() ){
                     $f3->set(Sso::SESSION_KEY_SSO_ERROR,
@@ -127,6 +130,8 @@ class Admin extends Controller{
      * @throws \Exception
      */
     public function dispatch(\Base $f3, $params, $character = null){
+        // beforeroute에서 설정한 character 객체를 가져옴
+        $character = $f3->get('character');
         if($character instanceof CharacterModel){
             // user logged in
             $parts = array_values(array_filter(array_map('strtolower', explode('/', $params['*']))));
@@ -134,11 +139,29 @@ class Admin extends Controller{
 
             switch($parts[0]){
                 case 'settings':
+                    // settings 페이지 및 API는 SUPER(admin)만 접근 가능
+                    if ($character->roleId->name !== 'SUPER') {
+                        $f3->reroute('@admin(@*=/)');
+                        return;
+                    }
                     switch($parts[1]){
                         case 'save':
                             $objectId = (int)$parts[2];
                             $values  = (array)$f3->get('GET');
                             $this->saveSettings($character, $objectId, $values);
+
+                            $f3->reroute('@admin(@*=/' . $parts[0] . ')');
+                            break;
+                        case 'savepersonal':
+                            $objectId = (int)$parts[2];
+                            $values  = (array)$f3->get('GET');
+                            $this->savePersonalSettings($character, $objectId, $values);
+
+                            $f3->reroute('@admin(@*=/' . $parts[0] . ')');
+                            break;
+                        case 'removepersonal':
+                            $objectId = (int)$parts[2];
+                            $this->removePersonalSettings($character, $objectId);
 
                             $f3->reroute('@admin(@*=/' . $parts[0] . ')');
                             break;
@@ -161,6 +184,10 @@ class Admin extends Controller{
                             $value  = (int)$parts[3];
                             $this->banCharacter($character, $objectId, $value);
                             break;
+                        case 'info':
+                            // GET /admin/members/info/{uid} — ESI 캐릭터 정보 JSON 반환
+                            $this->getMemberInfo($f3, (int)$parts[2]);
+                            return;
                     }
                     $f3->set('tplKickOptions', self::KICK_OPTIONS);
                     $this->initMembers($f3, $character);
@@ -183,6 +210,11 @@ class Admin extends Controller{
                     $this->initMaps($f3, $character);
                     break;
                 case 'spydetect':
+                    // spydetect 페이지 및 API는 SUPER(admin)만 접근 가능
+                    if ($character->roleId->name !== 'SUPER') {
+                        $f3->reroute('@admin(@*=/)');
+                        return;
+                    }
                     if (isset($parts[1]) && $parts[1] === 'data') {
                         $this->spydetectData($f3);
                         return;
@@ -250,10 +282,133 @@ class Admin extends Controller{
     }
 
     /**
+     * save personal character map rights
+     * @param CharacterModel $adminCharacter  currently logged-in admin
+     * @param int            $targetCharacterId  character whose rights are being saved
+     * @param array          $settings  GET parameters (rights[rightId][active] = 1|0, init = 1)
+     * @throws \Exception
+     */
+    protected function savePersonalSettings(CharacterModel $adminCharacter, int $targetCharacterId, array $settings){
+        if(!$targetCharacterId) return;
+
+        /** @var CharacterModel $targetCharacter */
+        $targetCharacter = CharacterModel::getNew('CharacterModel');
+        // UID(_id)로 캐릭터 로드
+        $targetCharacter->load(['_id = ?', $targetCharacterId]);
+        
+        if(!$targetCharacter->valid()){
+            // DB에 없는 캐릭터인 경우 (한 번도 접속 안 함) -> ESI에서 정보 가져와 강제 생성
+            $sso = new Sso();
+            try {
+                $charData = $sso->getCharacterData($targetCharacterId);
+                if(!empty($charData->character)){
+                    $targetCharacter->_id = (int)$charData->character['id'];
+                    $targetCharacter->name = $charData->character['name'];
+                    // 기본 역할 설정 (MEMBER)
+                    $targetCharacter->roleId = RoleModel::getDefaultRole();
+                    $targetCharacter->active = 1;
+                    
+                    // 군단/연맹 정보 업데이트 (있을 경우)
+                    if($charData->corporation){
+                        $targetCharacter->corporationId = (int)$charData->corporation->id;
+                    }
+                    if($charData->alliance){
+                        $targetCharacter->allianceId = (int)$charData->alliance->id;
+                    }
+
+                    $targetCharacter->save();
+                }
+            } catch (\Throwable $e) {
+                // ignore — character could not be created from ESI
+            }
+        }
+
+        if($targetCharacter->valid() && !$targetCharacter->active){
+            // 기존에 active=0으로 생성된 캐릭터가 있다면 이를 활성화 (SSO 로그인 충돌 방지)
+            $targetCharacter->setActive(true);
+            $targetCharacter->save();
+        }
+
+        if(!$targetCharacter->valid()){
+            return;
+        }
+
+        $isInit = !empty($settings['init']);
+        $personalRightsData = (array)($settings['rights'] ?? []);
+
+        // 모든 사용 가능한 Right 목록을 직접 조회
+        /** @var \Exodus4D\Pathfinder\Model\Pathfinder\RightModel $rightModel */
+        $rightModel = CharacterModel::getNew('RightModel');
+        $allRights = $rightModel->find(['active = ? AND name IN (?)', 1, CorporationModel::RIGHTS]);
+        if(!$allRights){
+            return;
+        }
+
+        foreach($allRights as $tempRight){
+            $rightId = (int)$tempRight->_id;
+
+            // 해당 캐릭터+권한 조합의 기존 레코드를 직접 load (getRights() 우회)
+            /** @var \Exodus4D\Pathfinder\Model\Pathfinder\CharacterRightModel $cr */
+            $cr = CharacterModel::getNew('CharacterRightModel');
+            // characterId 필드는 CharacterModel의 _id와 매핑됨
+            $cr->load(['characterId = ? AND rightId = ?', $targetCharacter->_id, $rightId]);
+
+            if($isInit){
+                // 최초 추가: DB에 없으면 active=0으로 신규 생성
+                if($cr->dry()){
+                    $cr->characterId = $targetCharacter->_id;
+                    $cr->rightId     = $rightId;
+                    $cr->setActive(false);
+                    $cr->save();
+                }
+            }else{
+                // 체크박스 저장: 체크된 것은 active=1 upsert, 그 외는 erase
+                $isActive = isset($personalRightsData[$rightId])
+                    && (int)($personalRightsData[$rightId]['active'] ?? 0) === 1;
+
+                if($isActive){
+                    // 기존 레코드 없으면 새로 생성, 있으면 update
+                    if($cr->dry()){
+                         $cr->characterId = $targetCharacter->_id;
+                         $cr->rightId     = $rightId;
+                    }
+                    $cr->setActive(true);
+                    $cr->save();
+                }else{
+                    // 체크 해제 -> 삭제하지 않고 비활성화 유지 (리스트 등록 상태 유지 목적)
+                    if(!$cr->dry()){
+                        $cr->setActive(false);
+                        $cr->save();
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 캐릭터의 모든 개인 권한을 완전히 삭제
+     * @param CharacterModel $adminCharacter
+     * @param int $targetCharacterId
+     */
+    protected function removePersonalSettings(CharacterModel $adminCharacter, int $targetCharacterId){
+        $logger = self::getLogger('ADMIN');
+        $logger->write(sprintf('removePersonalSettings: targetCharacterId=%s', $targetCharacterId));
+
+        /** @var CharacterRightModel $crm */
+        $crm = CharacterModel::getNew('CharacterRightModel');
+        $rights = $crm->find(['characterId = ?', $targetCharacterId]);
+
+        if($rights){
+            $toErase = is_array($rights) ? $rights : iterator_to_array($rights);
+            foreach($toErase as $right){
+                $right->erase();
+            }
+            $logger->write(sprintf('removePersonalSettings: Erased all rights for charId=%s', $targetCharacterId));
+        }
+    }
+
+    /**
      * kick or revoke a character
-     * @param CharacterModel $character
-     * @param int $kickCharacterId
-     * @param int $minutes
      */
     protected function kickCharacter(CharacterModel $character, $kickCharacterId, $minutes){
         $kickOptions = self::KICK_OPTIONS;
@@ -390,7 +545,60 @@ class Admin extends Controller{
             $data->corporations[$corporation->name] = $corporation;
         }
 
+        // Fetch characters that have at least one personal right stored
+        /** @var CharacterRightModel $crm */
+        $crm = CharacterRightModel::getNew('CharacterRightModel');
+        $allRights = $crm->find();
+
+        $charIds = [];
+        if($allRights){
+            foreach($allRights as $r){
+                $cId = (int)$r->get('characterId', true);
+                $charIds[] = $cId;
+            }
+            $charIds = array_unique(array_filter($charIds));
+        }
+
+        $data->characters = [];
+        if(!empty($charIds)){
+            /** @var CharacterModel $charModel */
+            $charModel = CharacterModel::getNew('CharacterModel');
+            if($foundChars = $charModel->find(['id IN (?)', $charIds])){
+                $data->characters = $foundChars;
+            }
+        }
+
         $f3->set('tplSettings', $data);
+    }
+
+    /**
+     * GET /admin/members/info/{uid}
+     * ESI에서 캐릭터 기본 정보를 가져와 JSON 반환 (Personal Rights 탭 검색용)
+     * @param \Base $f3
+     * @param int   $uid
+     */
+    protected function getMemberInfo(\Base $f3, int $uid){
+        $return = (object) ['ok' => false];
+
+        if($uid){
+            $sso = new Sso();
+            try{
+                $charData = $sso->getCharacterData($uid);
+                if(!empty($charData->character)){
+                    $return->ok              = true;
+                    $return->id              = (int)$charData->character['id'];
+                    $return->name            = $charData->character['name'];
+                    $return->corporation_name = $charData->corporation ? $charData->corporation->name : 'Unknown Corp';
+                    $return->portrait_url    = 'https://images.evetech.net/characters/' . $uid . '/portrait?size=64';
+                }
+            }catch(\Throwable $e){
+                // ignore — ok stays false
+            }
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode($return);
+        exit;
     }
 
     /**

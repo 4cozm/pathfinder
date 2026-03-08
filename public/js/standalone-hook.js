@@ -1,6 +1,4 @@
-/* PF_STANDALONE_HOOK v2 */
 (function () {
-  console.log("[다클라 헬퍼] standalone-hook.js 로드됨");
   var inflight = null; // Promise<string|null>
   /** 성공한 payload 캐시 — updateUserData 등으로 헤더가 다시 그려져도 새 링크에 재적용 */
   var cachedPayload = null;
@@ -96,13 +94,6 @@
 
     var url = payload ? "pathfinder://standalone?payload=" + encodeURIComponent(payload) : "pathfinder://standalone";
     setLinkHref(a, payload);
-
-    // [임시] 앱 스킴 호출 디버그 (F12 콘솔에서 확인)
-    console.log("[다클라 헬퍼] 앱 스킴 호출", {
-      hasPayload: !!payload,
-      payloadLength: payload ? payload.length : 0,
-      url: url,
-    });
 
     window.location.href = url;
   }

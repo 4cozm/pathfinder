@@ -77,39 +77,45 @@ class Connection extends AbstractRestController {
             $map = Pathfinder\AbstractPathfinderModel::getNew('MapModel');
             $map->getById($mapId);
             if($map->hasAccess($activeCharacter)){
-                $source = $map->getSystemById((int)$requestData['source']);
-                $target = $map->getSystemById((int)$requestData['target']);
+                if($map->hasRight($activeCharacter, 'map_update')){
+                    $source = $map->getSystemById((int)$requestData['source']);
+                    $target = $map->getSystemById((int)$requestData['target']);
 
-                if(
-                    !is_null($source) &&
-                    !is_null($target)
-                ){
-                    /**
-                     * @var $connection Pathfinder\ConnectionModel
-                     */
-                    $connection = Pathfinder\AbstractPathfinderModel::getNew('ConnectionModel');
-                    $connection->getById((int)$requestData['id']);
+                    if(
+                        !is_null($source) &&
+                        !is_null($target)
+                    ){
+                        /**
+                         * @var $connection Pathfinder\ConnectionModel
+                         */
+                        $connection = Pathfinder\AbstractPathfinderModel::getNew('ConnectionModel');
+                        $connection->getById((int)$requestData['id']);
 
-                    $connection->mapId = $map;
-                    $connection->source = $source;
-                    $connection->target = $target;
+                        $connection->mapId = $map;
+                        $connection->source = $source;
+                        $connection->target = $target;
 
-                    // if scope + type data send -> use them ...
-                    if($requestData['scope'] && !empty($requestData['type'])){
-                        $connection->copyfrom($requestData, ['scope', 'type']);
+                        // if scope + type data send -> use them ...
+                        if($requestData['scope'] && !empty($requestData['type'])){
+                            $connection->copyfrom($requestData, ['scope', 'type']);
+                        }
+
+                        // ... set/change default scope + type
+                        if(!$requestData['disableAutoScope']){
+                            $connection->setAutoScopeAndType();
+                        }
+
+                        if($connection->save($activeCharacter)){
+                            $connectionData = $connection->getData();
+
+                            // broadcast map changes
+                            $this->broadcastMap($connection->mapId);
+                        }
                     }
-
-                    // ... set/change default scope + type
-                    if(!$requestData['disableAutoScope']){
-                        $connection->setAutoScopeAndType();
-                    }
-
-                    if($connection->save($activeCharacter)){
-                        $connectionData = $connection->getData();
-
-                        // broadcast map changes
-                        $this->broadcastMap($connection->mapId);
-                    }
+                }else{
+                    $f3->set('HALT', true);
+                    $f3->error(401, sprintf('Character %s does not have sufficient rights for map update', $activeCharacter->name));
+                    return;
                 }
             }
         }
@@ -136,18 +142,24 @@ class Connection extends AbstractRestController {
             $map = Pathfinder\AbstractPathfinderModel::getNew('MapModel');
             $map->getById($mapId);
             if($map->hasAccess($activeCharacter)){
-                foreach($connectionIds as $connectionId){
-                    if($connection = $map->getConnectionById($connectionId)){
-                        if($connection->delete($activeCharacter)){
-                            $deletedConnectionIds[] = $connectionId;
+                if($map->hasRight($activeCharacter, 'map_delete')){
+                    foreach($connectionIds as $connectionId){
+                        if($connection = $map->getConnectionById($connectionId)){
+                            if($connection->delete($activeCharacter)){
+                                $deletedConnectionIds[] = $connectionId;
+                            }
+                            $connection->reset();
                         }
-                        $connection->reset();
                     }
-                }
 
-                // broadcast map changes
-                if(count($deletedConnectionIds)){
-                    $this->broadcastMap($map);
+                    // broadcast map changes
+                    if(count($deletedConnectionIds)){
+                        $this->broadcastMap($map);
+                    }
+                }else{
+                    $f3->set('HALT', true);
+                    $f3->error(401, sprintf('Character %s does not have sufficient rights for map delete', $activeCharacter->name));
+                    return;
                 }
             }
         }

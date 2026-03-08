@@ -854,6 +854,53 @@ class MapModel extends AbstractMapTrackingModel {
     }
 
     /**
+     * 특정 캐릭터가 이 맵에서 특정 액션(update, delete 등)을 수행할 권한이 있는지 통합 체크
+     * @param CharacterModel $character
+     * @param string $rightName
+     * @return bool
+     */
+    public function hasRight(CharacterModel $character, string $rightName) : bool {
+        // 1. 개인 권한(Personal Rights) 확인 - 가장 우선순위 높음
+        // 리스트에 등록되어 있고 active=1이면 true, active=0이면 false (강제 차단)
+        $personalRights = $character->getRights([$rightName], ['addInactive' => true]);
+        if(!empty($personalRights)){
+            /** @var CharacterRightModel $pr */
+            $pr = $personalRights[0];
+            // DB에 실제로 기록이 있는지 확인 (dry()가 false이면 기록이 있는 것)
+            if(!$pr->dry()){
+                return (bool)$pr->active;
+            }
+        }
+
+        // 2. 소속 코퍼레이션 권한 확인 (기존 패스파인더 보안 로직 유지)
+        if($this->isCorporation() || $this->isAlliance()){
+            $org = ($this->isCorporation()) ? $character->getCorporation() : $character->getAlliance();
+            if($org){
+                $orgRights = $org->getRights([$rightName]);
+                if(!empty($orgRights)){
+                    /** @var CorporationRightModel $right */
+                    $right = $orgRights[0];
+                    /** @var RoleModel $requiredRole */
+                    $requiredRole = $right->roleId;
+                    /** @var RoleModel $characterRole */
+                    $characterRole = $character->roleId;
+
+                    if($requiredRole && $characterRole){
+                        // level이 높을수록(숫자가 클수록) 강력한 권한임
+                        // 멤버: 2, 매니저: 4, 슈퍼: 10
+                        if((int)$characterRole->level < (int)$requiredRole->level){
+                            return false; // 권한 부족
+                        }
+                    }
+                }
+            }
+        }
+
+        // 개인 권한 설정도 없고, 조직 권한에서도 걸러지지 않은 경우 기본 접근권한(hasAccess) 확인
+        return $this->hasAccess($character);
+    }
+
+    /**
      * get all (private) characters for this map
      * @return CharacterModel[]
      */

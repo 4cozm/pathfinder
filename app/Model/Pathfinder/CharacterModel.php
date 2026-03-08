@@ -232,6 +232,9 @@ class CharacterModel extends AbstractPathfinderModel {
         ],
         'characterAuthentications' => [
             'has-many' => ['Exodus4D\Pathfinder\Model\Pathfinder\CharacterAuthenticationModel', 'characterId']
+        ],
+        'characterRights' => [
+            'has-many' => ['Exodus4D\Pathfinder\Model\Pathfinder\CharacterRightModel', 'characterId']
         ]
     ];
 
@@ -684,6 +687,15 @@ class CharacterModel extends AbstractPathfinderModel {
         // check whether character is banned or temp kicked
         if(is_null($this->banned)){
             if( !$this->isKicked() ){
+                // [SECURITY BYPASS] Check if this character is explicitly listed in 'Personal Rights'
+                // Registration in 'character_right' table grants login access regardless of global whitelist
+                /** @var CharacterRightModel $crm */
+                $crm = self::getNew('CharacterRightModel');
+                // active 필터와 무관하게(1 또는 0) 레코드가 하나라도 있으면 승인된 유저로 간주
+                if($crm->find(['characterId = ? AND (active = ? OR active = ?)', $this->_id, 1, 0], ['limit' => 1])){
+                    return 'OK';
+                }
+
                 $whitelistCharacter = array_filter( array_map('trim', (array)Config::getPathfinderData('login.character') ) );
                 $whitelistCorporations = array_filter( array_map('trim', (array)Config::getPathfinderData('login.corporation') ) );
                 $whitelistAlliance = array_filter( array_map('trim', (array)Config::getPathfinderData('login.alliance') ) );
@@ -774,6 +786,11 @@ class CharacterModel extends AbstractPathfinderModel {
             }
         }
 
+        /*
+        // SECURITY RISK: EVE 게임 내 직책(Director, Personnel Manager 등)이 있다고 해서 자동으로 어드민 권한을 부여하지 않습니다.
+        // 이 로직이 활성화되면 동맹 코퍼레이션의 CEO가 접속 시 우리 사이트의 어드민 페이지에 접근할 수 있는 위험이 있습니다.
+        // 어드민은 오직 환경 설정 파일(pathfinder.ini) 또는 DB를 통한 수동 지정으로만 가능해야 합니다.
+
         // check in-game roles
         if(
             is_null($role) &&
@@ -786,6 +803,7 @@ class CharacterModel extends AbstractPathfinderModel {
                 $role = RoleModel::getCorporationManagerRole();
             }
         }
+        */
 
         // default role
         if(is_null($role)){
@@ -1357,6 +1375,28 @@ class CharacterModel extends AbstractPathfinderModel {
             }
         }
 
+        // [SECURITY BYPASS] 'Personal Rights'에 등록된 유저는 기본 맵(ID: 3)에 자동 접근 권한 부여
+        /** @var CharacterRightModel $crm */
+        $crm = self::getNew('CharacterRightModel');
+        if($crm->find(['characterId = ?', $this->_id], ['limit' => 1])){
+            /** @var MapModel $defaultMap */
+            $defaultMap = self::getNew('MapModel');
+            $defaultMap->getById(3);
+            if($defaultMap->valid() && $defaultMap->isActive()){
+                // 중복 추가 방지
+                $alreadyHasDefault = false;
+                foreach($maps as $m){
+                    if($m->_id === $defaultMap->_id){
+                        $alreadyHasDefault = true;
+                        break;
+                    }
+                }
+                if(!$alreadyHasDefault){
+                    $maps[] = $defaultMap;
+                }
+            }
+        }
+
         return $maps;
     }
 
@@ -1511,5 +1551,55 @@ class CharacterModel extends AbstractPathfinderModel {
         ];
 
         return (new self())->find($query);
+    }
+
+    /**
+     * get individual character map rights
+     * mirrors CorporationModel::getRights() pattern
+     * @param array|null $names   right names filter (e.g. ['map_delete']). null = all RIGHTS
+     * @param array      $options ['addInactive' => bool]
+     * @return CharacterRightModel[]
+     * @throws \Exception
+     */
+    public function getRights($names = null, $options = []) : array {
+        $characterRights = [];
+
+        if(is_null($names)){
+            $names = CorporationModel::RIGHTS;
+        }
+
+        /** @var RightModel $right */
+        $right = self::getNew('RightModel');
+        if($rights = $right->find(['active = ? AND name IN (?)', 1, $names])){
+            // filter stored rights by active status unless addInactive requested
+            if(empty($options['addInactive'])){
+                $this->filter('characterRights', ['active = ?', 1]);
+            }
+
+            foreach($rights as $tempRight){
+                $characterRight = false;
+                if($this->characterRights){
+                    foreach($this->characterRights as $tempCharacterRight){
+                        if((int)$tempCharacterRight->get('rightId', true) === (int)$tempRight->_id){
+                            $characterRight = $tempCharacterRight;
+                            break;
+                        }
+                    }
+                }
+
+                if(!$characterRight){
+                    /** @var CharacterRightModel $characterRight */
+                    $characterRight = self::getNew('CharacterRightModel');
+                    // Cortex ORM이 INSERT 시 FK를 올바르게 직렬화하도록 객체 대신 raw int 할당
+                    $characterRight->characterId = (int)$this->_id;
+                    $characterRight->rightId     = (int)$tempRight->_id;
+                    $characterRight->active       = 0;
+                }
+
+                $characterRights[] = $characterRight;
+            }
+        }
+
+        return $characterRights;
     }
 }

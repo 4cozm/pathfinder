@@ -15,6 +15,11 @@ use Exodus4D\Pathfinder\Model\Pathfinder;
 class Map extends AbstractRestController {
 
     /**
+     * error message missing character right for map create
+     */
+    const ERROR_MAP_CREATE = 'Character %s does not have sufficient rights for map create';
+
+    /**
      * error message missing character right for map delete
      */
     const ERROR_MAP_DELETE = 'Character %s does not have sufficient rights for map delete';
@@ -26,13 +31,21 @@ class Map extends AbstractRestController {
      */
     public function put(\Base $f3, $test){
         $requestData = $this->getRequestData($f3);
+        $activeCharacter = $this->getCharacter();
 
         /**
          * @var $map Pathfinder\MapModel
          */
         $map = Pathfinder\AbstractPathfinderModel::getNew('MapModel');
-        $mapData = $this->update($map, $requestData)->getData();
 
+        if(!$map->hasRight($activeCharacter, 'map_create')){
+            $f3->set('HALT', true);
+            $f3->error(401, sprintf(self::ERROR_MAP_CREATE, $activeCharacter->name));
+            return;
+        }
+
+        $map->setData($requestData);
+        $mapData = $this->update($map, $requestData)->getData();
         $this->out($mapData);
     }
 
@@ -80,14 +93,7 @@ class Map extends AbstractRestController {
 
             if($map->hasAccess($activeCharacter)){
                 // check if character has delete right for map type
-                $hasRight = true;
-                if($map->isCorporation()){
-                    if($corpRight = $activeCharacter->getCorporation()->getRights(['map_delete'])){
-                        if($corpRight[0]->get('roleId', true) !== $activeCharacter->get('roleId', true)){
-                            $hasRight = false;
-                        }
-                    }
-                }
+                $hasRight = $map->hasRight($activeCharacter, 'map_delete');
 
                 if($hasRight){
                     $map->setActive(false);

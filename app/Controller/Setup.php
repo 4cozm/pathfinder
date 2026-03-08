@@ -85,6 +85,7 @@ class Setup extends Controller {
                 'Model\Pathfinder\CorporationMapModel',
 
                 'Model\Pathfinder\CorporationRightModel',
+                'Model\Pathfinder\CharacterRightModel',
                 'Model\Pathfinder\CorporationStructureModel',
 
                 'Model\Pathfinder\UserCharacterModel',

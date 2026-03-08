@@ -4,69 +4,222 @@
 
         <h4><i class="fas fa-fw fa-cogs"></i>&nbsp;{{ ucfirst(@tplPage) }}</h4>
 
-        <div class="row text-center">
-            <repeat group="{{ @tplSettings->corporations }}" value="{{ @corporation }}" key="{{@corpName}}" counter="{{ @corpCount }}">
+        <ul class="nav nav-tabs pf-nav-tabs" style="margin-bottom: 0;">
+            <li class="active"><a href="#tab-corp-rights" data-toggle="tab">Corporation Rights</a></li>
+            <li><a href="#tab-personal-rights" data-toggle="tab">Personal Rights</a></li>
+        </ul>
 
-                <set fieldsetId = "{{ 'settings-map-' . @corporation->_id }}" />
+        <div class="tab-content pf-tab-content">
 
-                <form role="form" class="form-horizontal" action="/admin/{{ @tplPage}}/save/{{ @corporation->_id }}">
-                    <div class="col-sm-12 col-md-6 col-lg-4 pf-landing-pricing-panel">
-                        <div class="panel panel-default pricing-big">
-                            <div class="panel-heading text-left">
-                                <h3 class="panel-title">
-                                    {{ @corpCount }}. {{@corpName}}
-                                    <img class="pf-character-image" src="{{ @tplImage->eveSrcUrl('corporations', @corporation->_id, 32) }}" alt="{{ @corporation->name }}"/>
-                                </h3>
-                            </div>
-                            <div class="panel-body panel-reverse-order">
+            {* =========================================================== *}
+            {* TAB 1: Corporation Rights (기존 기능 유지)                   *}
+            {* =========================================================== *}
+            <div class="tab-pane active" id="tab-corp-rights" style="padding-top:20px;">
+                <div class="row text-center">
+                    <repeat group="{{ @tplSettings->corporations }}" value="{{ @corporation }}" key="{{@corpName}}" counter="{{ @corpCount }}">
 
-                                <set isManaged = "" />
+                        <set fieldsetId = "{{ 'settings-map-' . @corporation->_id }}" />
 
-                                <fieldset class="reverse-order-footer" data-id="{{ @fieldsetId}}">
-                                    <h4 class="pf-dynamic-area">Map roles</h4>
+                        <form role="form" class="form-horizontal" action="/admin/{{ @tplPage}}/save/{{ @corporation->_id }}">
+                            <div class="col-sm-12 col-md-6 col-lg-4 pf-landing-pricing-panel">
+                                <div class="panel panel-default pricing-big">
+                                    <div class="panel-heading text-left">
+                                        <h3 class="panel-title">
+                                            {{ @corpCount }}. {{@corpName}}
+                                            <img class="pf-character-image" src="{{ @tplImage->eveSrcUrl('corporations', @corporation->_id, 32) }}" alt="{{ @corporation->name }}"/>
+                                        </h3>
+                                    </div>
+                                    <div class="panel-body panel-reverse-order">
 
-                                    <repeat group="{{ @corporation->getRights() }}" value="{{ @corporationRight }}" >
-                                        <check if="{{ @tplDefaultRole->_id != @corporationRight->roleId->_id }}">
-                                            <set isManaged = "checked" />
-                                        </check>
+                                        <set isManaged = "" />
 
-                                        <include href="templates/modules/role_select_row.html"with="right={{@corporationRight}},id={{@corporation->_id}},roles={{@tplRoles}}"/>
-                                    </repeat>
-                                </fieldset>
+                                        <fieldset class="reverse-order-footer" data-id="{{ @fieldsetId}}">
+                                            <h4 class="pf-dynamic-area">Map roles</h4>
 
-                                <div class="reverse-order-header">
-                                    <div class="row">
-                                        <div class="col-sm-12">
-                                            <div class="col-sm-12 col-md-6">
-                                                <div class="form-group">
-                                                    <div class="col-xs-6 col-sm-12  checkbox checkbox-warning">
-                                                        <input id="{{ @fieldsetId}}" name="managed" value="1" type="checkbox" data-target="{{ @fieldsetId}}" {{ @isManaged }}>
-                                                        <label for="{{ @fieldsetId}}">Managed mode
-                                                            <i class="fas fa-fw fa-sm fa-question-circle pf-help-light" title="If active, admin roles can be set for some actions"></i>
-                                                        </label>
+                                            <repeat group="{{ @corporation->getRights() }}" value="{{ @corporationRight }}" >
+                                                <check if="{{ @tplDefaultRole->_id != @corporationRight->roleId->_id }}">
+                                                    <set isManaged = "checked" />
+                                                </check>
+
+                                                <include href="templates/modules/role_select_row.html"with="right={{@corporationRight}},id={{@corporation->_id}},roles={{@tplRoles}}"/>
+                                            </repeat>
+                                        </fieldset>
+
+                                        <div class="reverse-order-header">
+                                            <div class="row">
+                                                <div class="col-sm-12">
+                                                    <div class="col-sm-12 col-md-6">
+                                                        <div class="form-group">
+                                                            <div class="col-xs-6 col-sm-12  checkbox checkbox-warning">
+                                                                <input id="{{ @fieldsetId}}" name="managed" value="1" type="checkbox" data-target="{{ @fieldsetId}}" {{ @isManaged }}>
+                                                                <label for="{{ @fieldsetId}}">Managed mode
+                                                                    <i class="fas fa-fw fa-sm fa-question-circle pf-help-light" title="If active, admin roles can be set for some actions"></i>
+                                                                </label>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
+
+                                        <div class="pf-dialog-warning-container alert alert-info">
+                                            <span class="txt-color txt-color-info">Cache expire</span>
+                                            <small> Roles are cached for 2min</small>
+                                        </div>
+
+                                    </div>
+                                    <div class="panel-footer text-right">
+                                        <button type="submit" class="btn btn-success pf-overlay-trigger">
+                                            <i class="fas fa-fw fa-check"></i> save
+                                        </button>
                                     </div>
                                 </div>
-
-
-                                <div class="pf-dialog-warning-container alert alert-info">
-                                    <span class="txt-color txt-color-info">Cache expire</span>
-                                    <small> Roles are cached for 2min</small>
-                                </div>
-
                             </div>
-                            <div class="panel-footer text-right">
-                                <button type="submit" class="btn btn-success pf-overlay-trigger">
-                                    <i class="fas fa-fw fa-check"></i> save
+                        </form>
+                    </repeat>
+                </div>
+            </div>
+
+            {* =========================================================== *}
+            {* TAB 2: Personal Rights (개별 유저 맵 권한)                  *}
+            {* =========================================================== *}
+            <div class="tab-pane" id="tab-personal-rights" style="padding-top:20px;">
+
+                {* 유저 검색 & 추가 *}
+                <div class="well well-sm" style="margin-bottom:20px;">
+                    <h5><i class="fas fa-fw fa-user-plus"></i> EVE 캐릭터 UID로 검색 후 개인 권한 추가</h5>
+                    <p class="text-info" style="margin-bottom: 15px;">
+                        <i class="fas fa-fw fa-info-circle"></i>
+                        이곳에 ID를 등록하면 기본 맵인 <strong>"고양이 구멍"</strong>에 대한 view 가 활성화 됩니다.
+                    </p>
+                    <div class="row">
+                        <div class="col-xs-12 col-sm-6 col-md-4">
+                            <div class="input-group">
+                                <input type="number" id="personal-uid-input" class="form-control" placeholder="EVE Character ID (e.g. 2112345678)">
+                                <span class="input-group-btn">
+                                    <button class="btn btn-default" type="button" id="personal-search-btn">Search</button>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="personal-preview" style="display:none; margin-top:15px;">
+                        <div class="media">
+                            <div class="media-left">
+                                <img id="personal-portrait" class="media-object img-rounded" src="" alt="Portrait" width="64" height="64">
+                            </div>
+                            <div class="media-body">
+                                <h4 class="media-heading" id="personal-name"></h4>
+                                <p id="personal-corp" class="text-muted"></p>
+                                <button class="btn btn-success btn-sm" type="button" id="personal-add-btn">
+                                    <i class="fas fa-fw fa-plus"></i> Add to Personal Rights
                                 </button>
                             </div>
                         </div>
                     </div>
-                </form>
-            </repeat>
+                    <div id="personal-error" class="alert alert-danger" style="display:none; margin-top:15px; margin-bottom:0;"></div>
+                </div>
+
+                {* 등록된 개인 캐릭터 권한 목록 *}
+                <div class="row text-center" id="personal-rights-list">
+                    <repeat group="{{ @tplSettings->characters }}" value="{{ @char }}" counter="{{ @charCount }}">
+                        <form role="form" class="form-horizontal" action="/admin/{{ @tplPage}}/savePersonal/{{ @char->_id }}">
+                            <div class="col-sm-12 col-md-6 col-lg-4 pf-landing-pricing-panel">
+                                <div class="panel panel-default pricing-big">
+                                    <div class="panel-heading text-left">
+                                        <h3 class="panel-title">
+                                            {{ @charCount }}. {{ @char->name }}
+                                            <img class="pf-character-image" src="{{ @tplImage->eveSrcUrl('characters', @char->_id, 32) }}" alt="{{ @char->name }}"/>
+                                        </h3>
+                                    </div>
+                                    <div class="panel-body">
+                                        <repeat group="{{ @char->getRights(null, ['addInactive' => true]) }}" value="{{ @right }}">
+                                            <include href="templates/modules/personal_right_row.html" with="right={{ @right }}, character={{ @char }}"/>
+                                        </repeat>
+                                    </div>
+                                    <div class="panel-footer text-right">
+                                        <a href="/admin/{{ @tplPage }}/removePersonal/{{ @char->_id }}"
+                                           class="btn btn-danger btn-sm pf-overlay-trigger pull-left"
+                                           onclick="return confirm('{{ @char->name }} 의 모든 개인 권한을 삭제하시겠습니까?');">
+                                            <i class="fas fa-fw fa-trash"></i> Remove
+                                        </a>
+                                        <button type="submit" class="btn btn-success pf-overlay-trigger">
+                                            <i class="fas fa-fw fa-check"></i> save
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </repeat>
+                </div>
+            </div>
+
         </div>
     </div>
 </section>
+
+<script>
+(function(){
+    var uidInput  = document.getElementById('personal-uid-input');
+    var searchBtn = document.getElementById('personal-search-btn');
+    var preview   = document.getElementById('personal-preview');
+    var portrait  = document.getElementById('personal-portrait');
+    var nameEl    = document.getElementById('personal-name');
+    var corpEl    = document.getElementById('personal-corp');
+    var addBtn    = document.getElementById('personal-add-btn');
+    var errorEl   = document.getElementById('personal-error');
+
+    function showError(msg){ errorEl.textContent = msg; errorEl.style.display = 'block'; preview.style.display = 'none'; }
+    function hideAll(){ errorEl.style.display = 'none'; preview.style.display = 'none'; }
+
+    searchBtn.addEventListener('click', function(){
+        var uid = parseInt(uidInput.value, 10);
+        if(!uid){ showError('유효한 캐릭터 ID를 입력하세요.'); return; }
+        
+        hideAll();
+        
+        // 버튼 로딩 상태 활성화
+        searchBtn.disabled = true;
+        searchBtn.textContent = '검색중...';
+
+        fetch('/admin/members/info/' + uid)
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if(d.ok){
+                    portrait.src = d.portrait_url;
+                    nameEl.textContent = d.name;
+                    corpEl.textContent = d.corporation_name;
+                    preview.style.display = 'block';
+                }else{
+                    showError('캐릭터를 찾을 수 없습니다.');
+                }
+            })
+            .catch(function(){ 
+                showError('네트워크 오류가 발생했습니다.'); 
+            })
+            .finally(function(){
+                // 버튼 상태 복구
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'Search';
+            });
+    });
+
+    addBtn.addEventListener('click', function(){
+        var uid = parseInt(uidInput.value, 10);
+        if(!uid) return;
+        // savePersonal/0 with uid param — server creates a dummy inactive right entry
+        // so the character appears in the list; actual rights are saved on form submit
+        window.location.href = '/admin/settings/savePersonal/' + uid + '?init=1';
+    });
+
+    // 폼 제출 시 저장 버튼 비활성화 (모든 personal rights form에 적용)
+    document.querySelectorAll('#personal-rights-list form').forEach(function(form){
+        form.addEventListener('submit', function(e){
+            var submitBtn = form.querySelector('button[type="submit"]');
+            if(submitBtn){
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-fw fa-sync fa-spin"></i> saving...';
+            }
+        });
+    });
+})();
+</script>

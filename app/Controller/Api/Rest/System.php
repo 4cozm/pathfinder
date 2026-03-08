@@ -62,7 +62,7 @@ class System extends AbstractRestController {
              */
             $map = Pathfinder\AbstractPathfinderModel::getNew('MapModel');
             $map->getById($mapId);
-            if($map->hasAccess($activeCharacter)){
+            if($map->hasRight($activeCharacter, 'map_update')){
                 $system = $map->getNewSystem($requestData['systemId']);
                 $systemData = $this->update($system, $requestData)->getData();
             }
@@ -90,7 +90,7 @@ class System extends AbstractRestController {
             $system = Pathfinder\AbstractPathfinderModel::getNew('SystemModel');
             $system->getById($systemId);
 
-            if($system->hasAccess($activeCharacter)){
+            if($system->mapId && $system->mapId->hasRight($activeCharacter, 'map_update')){
                 $systemData = $this->update($system, $requestData)->getData();
             }
         }
@@ -117,7 +117,7 @@ class System extends AbstractRestController {
             $map = Pathfinder\AbstractPathfinderModel::getNew('MapModel');
             $map->getById($mapId);
 
-            if($map->hasAccess($activeCharacter)){
+            if($map->hasRight($activeCharacter, 'map_update')){
                 $newSystemModel = Pathfinder\AbstractPathfinderModel::getNew('SystemModel');
                 foreach($systemIds as $systemId){
                     if($system = $map->getSystemById($systemId)){
