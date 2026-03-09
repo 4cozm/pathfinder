@@ -241,13 +241,12 @@ class CharacterUpdate extends AbstractCron
     {
         $this->logStart(__FUNCTION__, false);
 
-        // ✅ presence 디렉토리 (너가 통일한 경로로 맞춰)
-        // 예: /var/www/html/pathfinder/tmp/pf  (공유 볼륨 아래)
         $dir = '/var/www/html/pathfinder/tmp/pf';
+        $t0  = microtime(true);
 
-        $t0 = microtime(true);
-
-        $files = glob($dir . '/standalone_presence_map_*.json') ?: [];
+        // per-conn 파일 패턴: standalone_presence_map_{mapId}_conn_{resourceId}.json
+        // 구형 패턴(standalone_presence_map_{mapId}.json)도 함께 수집해 무중단 전환 지원
+        $files      = glob($dir . '/standalone_presence_map_*.json') ?: [];
         $filesCount = count($files);
 
         // helper: Map.php의 protected updateMapByCharacter() 호출 래퍼
@@ -256,7 +255,6 @@ class CharacterUpdate extends AbstractCron
                 \Exodus4D\Pathfinder\Model\Pathfinder\MapModel $map,
                 \Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel $character
             ): \Exodus4D\Pathfinder\Model\Pathfinder\MapModel {
-
                 $positions = [
                     'defaults' => [
                         ['x' => 0,   'y' => 30],
@@ -264,16 +262,21 @@ class CharacterUpdate extends AbstractCron
                     ],
                     'location' => [],
                 ];
-
                 return $this->updateMapByCharacter($map, $character, $positions);
             }
         };
 
-        $charsTotal = 0;        // 파일에 들어있는 캐릭 총합
-        $charsProcessed = 0;    // 기본 조건 통과해서 실제로 updateLog/track 시도한 수
-        $updated = 0;           // updateLog+track+push 성공 수
-        $skippedExpired = 0;    // TTL 만료 파일
-        $errors = 0;
+        $charsTotal     = 0;
+        $charsProcessed = 0;
+        $updated        = 0;
+        $skippedExpired = 0;
+        $errors         = 0;
+        $now            = time();
+
+        // --- STEP 1: 모든 파일을 읽어 TTL 유효한 것만 mapId => set(characterId) 로 merge ---
+        // 여러 helper가 같은 mapId에 대해 각자 per-conn 파일을 쓰므로, 합집합을 구해야
+        // 전체 활성 캐릭터 집합이 유지된다.
+        $mergedByMap = [];   // [mapId => [cid => true]]
 
         foreach ($files as $file) {
             $raw = @file_get_contents($file);
@@ -283,28 +286,33 @@ class CharacterUpdate extends AbstractCron
             if (!is_array($p)) continue;
 
             $mapId = (int)($p['mapId'] ?? 0);
-            $ts    = (int)($p['ts'] ?? 0);
-            $ttl   = (int)($p['ttl'] ?? 0);
-            $chars = $p['chars'] ?? [];
+            $ts    = (int)($p['ts']    ?? 0);
+            $ttl   = (int)($p['ttl']   ?? 0);
+            $chars = $p['chars']        ?? [];
 
             if ($mapId <= 0 || $ts <= 0 || $ttl <= 0 || !is_array($chars)) continue;
 
-            // TTL 만료면 스킵(유령 방지)
-            if (time() > ($ts + $ttl)) {
+            if ($now > ($ts + $ttl)) {
                 $skippedExpired++;
                 continue;
             }
 
-            // map 로드
+            foreach ($chars as $cid) {
+                $cid = is_array($cid) ? (int)($cid['id'] ?? 0) : (int)$cid;
+                if ($cid > 0) {
+                    $mergedByMap[$mapId][$cid] = true;
+                }
+            }
+        }
+
+        // --- STEP 2: mapId 별로 한 번만 map 로드 + character 처리 ---
+        foreach ($mergedByMap as $mapId => $cidSet) {
             $map = \Exodus4D\Pathfinder\Model\Pathfinder\AbstractPathfinderModel::getNew('MapModel');
             $map->getById($mapId);
             if (!$map->valid()) continue;
 
-            foreach ($chars as $cid) {
-                // chars가 객체 배열일 수도 있으니 이것도 안전하게(구동만 위해 최소)
-                $cid = is_array($cid) ? (int)($cid['id'] ?? 0) : (int)$cid;
-                if ($cid <= 0) continue;
-
+            foreach (array_keys($cidSet) as $cid) {
+                $cid = (int)$cid;
                 $charsTotal++;
 
                 try {
@@ -365,19 +373,17 @@ class CharacterUpdate extends AbstractCron
 
         $elapsedMs = (int)round((microtime(true) - $t0) * 1000);
 
-        // 기존 logEnd 포맷 유지
         $this->logEnd(__FUNCTION__, $charsTotal, $charsTotal, $updated);
 
-        // ✅ daemon이 받아서 찍을 stats
         return [
-            'dir' => $dir,
-            'files' => $filesCount,
-            'charsTotal' => $charsTotal,
+            'dir'            => $dir,
+            'files'          => $filesCount,
+            'charsTotal'     => $charsTotal,
             'charsProcessed' => $charsProcessed,
-            'updated' => $updated,
-            'expiredFiles' => $skippedExpired,
-            'errors' => $errors,
-            'elapsedMs' => $elapsedMs,
+            'updated'        => $updated,
+            'expiredFiles'   => $skippedExpired,
+            'errors'         => $errors,
+            'elapsedMs'      => $elapsedMs,
         ];
     }
 

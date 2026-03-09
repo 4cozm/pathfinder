@@ -11,68 +11,102 @@ let socket = null;
 let ports = [];
 let characterPorts = [];
 
+// reconnect state ====================================================================================================
+let wsUri = null;              // 마지막으로 접속한 URI — onclose 후 재연결에 사용
+let reconnectDelay = 1000;     // 현재 backoff 지연(ms)
+const RECONNECT_DELAY_MIN = 1000;
+const RECONNECT_DELAY_MAX = 30000;
+let reconnectTimer = null;
+// close code(1000/1001)는 프록시·서버 재시작 시에도 올 수 있어 신뢰도가 낮다.
+// 의도적 종료는 이 플래그로 명시하고, onclose는 플래그만 보고 재연결 여부를 결정한다.
+let intentionallyClosed = false;
+
+let scheduleReconnect = () => {
+    if(reconnectTimer !== null) return; // 중복 예약 방지
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if(socket === null && wsUri !== null && !intentionallyClosed){
+            connectSocket(wsUri);
+        }
+    }, reconnectDelay);
+    // exponential backoff: 1s → 2s → 4s → … → 30s
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX);
+};
+
 // init "WebSocket" connection ========================================================================================
+let connectSocket = uri => {
+    socket = new WebSocket(uri);
+
+    // "WebSocket" open -----------------------------------------------------------------------
+    socket.onopen = () => {
+        intentionallyClosed = false;          // 연결 성공 시 플래그 리셋
+        reconnectDelay = RECONNECT_DELAY_MIN; // 재연결 성공 시 backoff 초기화
+
+        let MsgWorkerOpen = new MsgWorker('ws:open');
+        MsgWorkerOpen.meta({readyState: socket.readyState});
+        broadcastPorts(MsgWorkerOpen); // 모든 탭에 open 알림 → 각 탭이 subscribe 재전송
+    };
+
+    // "WebSocket" message --------------------------------------------------------------------
+    socket.onmessage = e => {
+        let response = JSON.parse(e.data);
+
+        let MsgWorkerSend = new MsgWorker('ws:send');
+        // 서버는 task 또는 type 필드로 메시지 타입을 전송함
+        // (standalone.hello, combatAggregation.toast 등은 type 필드 사용)
+        MsgWorkerSend.task( response.task || response.type || null );
+        MsgWorkerSend.meta({
+            readyState: socket ? socket.readyState : WebSocket.CLOSED,
+            characterIds: response.characterIds || null
+        });
+        // load가 없는 메시지(type-only)는 response 전체를 data로 넘겨 expiresIn 등 접근 가능
+        MsgWorkerSend.data( response.load !== undefined ? response.load : response );
+
+        broadcastPorts(MsgWorkerSend);
+    };
+
+    // "WebSocket" close ----------------------------------------------------------------------
+    socket.onclose = closeEvent => {
+        let MsgWorkerClosed = new MsgWorker('ws:closed');
+        MsgWorkerClosed.meta({
+            readyState: WebSocket.CLOSED,
+            code: closeEvent.code,
+            reason: closeEvent.reason,
+            wasClean: closeEvent.wasClean
+        });
+
+        broadcastPorts(MsgWorkerClosed);
+        socket = null;
+
+        // intentionallyClosed 플래그가 없으면 항상 재연결 시도.
+        // close code(1000/1001)는 프록시·서버 재시작 시에도 올 수 있어
+        // 플래그 기반 판단이 더 신뢰성이 높다.
+        if(!intentionallyClosed && wsUri !== null){
+            scheduleReconnect();
+        }
+    };
+
+    // "WebSocket" error ----------------------------------------------------------------------
+    socket.onerror = () => {
+        let MsgWorkerError = new MsgWorker('ws:error');
+        MsgWorkerError.meta({
+            readyState: socket ? socket.readyState : WebSocket.CLOSED
+        });
+        // error 직후 onclose가 반드시 발생하므로 재연결은 onclose에서 처리
+        broadcastPorts(MsgWorkerError);
+    };
+};
+
 let initSocket = uri => {
+    wsUri = uri; // URI 저장 — 재연결 시 사용
+
     let MsgWorkerOpen = new MsgWorker('ws:open');
 
     if(socket === null){
-        socket = new WebSocket(uri);
-
-        // "WebSocket" open -----------------------------------------------------------------------
-        socket.onopen = e => {
-            MsgWorkerOpen.meta({
-                readyState: socket.readyState
-            });
-
-            sendToCurrentPort(MsgWorkerOpen);
-        };
-
-        // "WebSocket message ---------------------------------------------------------------------
-        socket.onmessage = e => {
-            let response = JSON.parse(e.data);
-
-            let MsgWorkerSend = new MsgWorker('ws:send');
-            // 서버는 task 또는 type 필드로 메시지 타입을 전송함
-            // (standalone.hello, combatAggregation.toast 등은 type 필드 사용)
-            MsgWorkerSend.task( response.task || response.type || null );
-            MsgWorkerSend.meta({
-                readyState: this.readyState,
-                characterIds: response.characterIds || null
-            });
-            // load가 없는 메시지(type-only)는 response 전체를 data로 넘겨 expiresIn 등 접근 가능
-            MsgWorkerSend.data( response.load !== undefined ? response.load : response );
-
-            broadcastPorts(MsgWorkerSend);
-        };
-
-        // "WebSocket" close ----------------------------------------------------------------------
-        socket.onclose = closeEvent => {
-            let MsgWorkerClosed = new MsgWorker('ws:closed');
-            MsgWorkerClosed.meta({
-                readyState: socket.readyState,
-                code: closeEvent.code,
-                reason: closeEvent.reason,
-                wasClean: closeEvent.wasClean
-            });
-
-            broadcastPorts(MsgWorkerClosed);
-            socket = null; // reset WebSocket
-        };
-
-        // "WebSocket" error ----------------------------------------------------------------------
-        socket.onerror = e => {
-            let MsgWorkerError = new MsgWorker('ws:error');
-            MsgWorkerError.meta({
-                readyState: socket.readyState
-            });
-
-            sendToCurrentPort(MsgWorkerError);
-        };
+        connectSocket(uri);
     }else{
         // socket still open
-        MsgWorkerOpen.meta({
-            readyState: socket.readyState
-        });
+        MsgWorkerOpen.meta({readyState: socket.readyState});
         sendToCurrentPort(MsgWorkerOpen);
     }
 };
@@ -177,10 +211,12 @@ self.addEventListener('connect', event => {   // jshint ignore:line
                 initSocket(data.uri);
                 break;
             case 'ws:send':
-                socket.send(JSON.stringify({
-                    task: MsgWorkerMessage.task(),
-                    load: MsgWorkerMessage.data()
-                }));
+                if(socket && socket.readyState === WebSocket.OPEN){
+                    socket.send(JSON.stringify({
+                        task: MsgWorkerMessage.task(),
+                        load: MsgWorkerMessage.data()
+                    }));
+                }
                 break;
             case 'sw:closePort':
                 port.close();
@@ -193,7 +229,7 @@ self.addEventListener('connect', event => {   // jshint ignore:line
                 // .. if not -> send "unsubscribe" event to WebSocket server
                 let portsLeft = getPortsByCharacterIds(characterIds);
 
-                if(!portsLeft.length){
+                if(!portsLeft.length && socket && socket.readyState === WebSocket.OPEN){
                     socket.send(JSON.stringify({
                         task: MsgWorkerMessage.task(),
                         load: characterIds
@@ -201,7 +237,15 @@ self.addEventListener('connect', event => {   // jshint ignore:line
                 }
                 break;
             case 'ws:close':
-               // closeSocket();
+                // 명시적 종료 — 이후 onclose에서 재연결하지 않는다
+                intentionallyClosed = true;
+                if(reconnectTimer !== null){
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }
+                if(socket && socket.readyState === WebSocket.OPEN){
+                    socket.close(1000, 'intentional');
+                }
                 break;
         }
     }, false);
