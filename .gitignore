@@ -49,6 +49,7 @@ Temporary Items
 .idea
 .usage
 *.gz
+*.br
 composer-dev.lock
 /conf/
 /node_modules/
