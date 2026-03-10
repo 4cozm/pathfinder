@@ -1083,12 +1083,12 @@ define([
         if(changes.charactersIds){
             updateTasks.push(updateHeaderCharacterSwitch(changes.characterId));
         }
+        // skip when only characterLogHistory changed to avoid re-requesting evetech type icons every poll
         if(
             changes.characterSystemId ||
             changes.characterShipType ||
             changes.characterStationId ||
-            changes.characterStructureId ||
-            changes.characterLogHistory
+            changes.characterStructureId
         ){
             updateTasks.push(updateHeaderCharacterLocation(changes.characterShipType));
         }

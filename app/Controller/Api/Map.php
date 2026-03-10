@@ -915,6 +915,22 @@ class Map extends Controller\AccessController {
                         }
                     }
 
+                    // when only target is new (source already on map), set target position next to source
+                    if(
+                        $addTargetSystem &&
+                        $targetSystem &&
+                        !$targetExists &&
+                        $sourceExists
+                    ){
+                        if(!empty($defaultPositions[1])){
+                            $systemPosX = (int)$defaultPositions[1]['x'];
+                            $systemPosY = (int)$defaultPositions[1]['y'];
+                        }else{
+                            $systemPosX = $sourceSystem->posX + $systemOffsetX;
+                            $systemPosY = $sourceSystem->posY + $systemOffsetY;
+                        }
+                    }
+
                     // save target system =============================================================================
                     if(
                         $addTargetSystem &&

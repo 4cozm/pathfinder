@@ -23,6 +23,11 @@ define([
         userUpdate: 0
     };
 
+    // client-side Ajax timeout and timeout-retry (abort = ignore)
+    const AJAX_TIMEOUT_MS = 30000;
+    const TIMEOUT_RETRY_MAX = 3;
+    let timeoutRetryCount = { mapUpdate: 0, userUpdate: 0 };
+
     // log keys -----------------------------------------------------------------------------------------------
     let logKeyServerMapData = Init.performanceLogging.keyServerMapData;
     let logKeyServerUserData = Init.performanceLogging.keyServerUserData;
@@ -389,8 +394,10 @@ define([
                 type: 'POST',
                 url: Init.path.updateMapData,
                 data: updatedMapData,
-                dataType: 'json'
+                dataType: 'json',
+                timeout: AJAX_TIMEOUT_MS
             }).done((data) => {
+                timeoutRetryCount.mapUpdate = 0;
                 // log request time
                 let duration = Util.timeStop(logKeyServerMapData);
                 Util.log(logKeyServerMapData, {duration: duration, type: 'server', description: 'request map data'});
@@ -435,7 +442,19 @@ define([
                     });
                 }
 
-            }).fail(handleAjaxErrorResponse);
+            }).fail((jqXHR, status, error) => {
+                if(status === 'abort'){
+                    return;
+                }
+                if(status === 'timeout' && timeoutRetryCount.mapUpdate < TIMEOUT_RETRY_MAX){
+                    timeoutRetryCount.mapUpdate += 1;
+                    console.warn('Map update request timeout (retry %s/%s), rescheduling.', timeoutRetryCount.mapUpdate, TIMEOUT_RETRY_MAX);
+                    initMapUpdatePing(mapModule, false);
+                    return;
+                }
+                timeoutRetryCount.mapUpdate = 0;
+                handleAjaxErrorResponse(jqXHR, status, error);
+            });
         }else{
             // skip this mapUpdate trigger and init next one
             initMapUpdatePing(mapModule, false);
@@ -474,8 +493,10 @@ define([
             type: 'POST',
             url: Init.path.updateUserData,
             data: updatedUserData,
-            dataType: 'json'
+            dataType: 'json',
+            timeout: AJAX_TIMEOUT_MS
         }).done((data) => {
+            timeoutRetryCount.userUpdate = 0;
             // log request time
             let duration = Util.timeStop(logKeyServerUserData);
             Util.log(logKeyServerUserData, {duration: duration, type: 'server', description:'request user data'});
@@ -510,7 +531,19 @@ define([
                     });
                 }
             }
-        }).fail(handleAjaxErrorResponse);
+        }).fail((jqXHR, status, error) => {
+            if(status === 'abort'){
+                return;
+            }
+            if(status === 'timeout' && timeoutRetryCount.userUpdate < TIMEOUT_RETRY_MAX){
+                timeoutRetryCount.userUpdate += 1;
+                console.warn('User update request timeout (retry %s/%s), rescheduling.', timeoutRetryCount.userUpdate, TIMEOUT_RETRY_MAX);
+                initMapUserUpdatePing(mapModule);
+                return;
+            }
+            timeoutRetryCount.userUpdate = 0;
+            handleAjaxErrorResponse(jqXHR, status, error);
+        });
     };
 
     /**
