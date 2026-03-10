@@ -1003,7 +1003,7 @@ class Map extends Controller\AccessController {
                             $connection &&
                             $connection->isWormhole()
                         ){
-                            $connection->logMass($targetLog);
+                            $connection->logMass($targetLog, $sourceSystemId, $targetSystemId);
                         }
                     }
                 }

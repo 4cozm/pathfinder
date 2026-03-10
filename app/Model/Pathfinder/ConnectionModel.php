@@ -486,20 +486,40 @@ class ConnectionModel extends AbstractMapTrackingModel {
     }
 
     /**
-     * log new mass for this connection
+     * log new mass for this connection (idempotent: same jump fingerprint = no-op)
      * @param CharacterLogModel $characterLog
+     * @param int $fromSystemId source system id (jump direction)
+     * @param int $targetSystemId target system id (jump direction)
      * @return ConnectionModel
-     * @throws \Exception
      */
-    public function logMass(CharacterLogModel $characterLog) : self {
-        if( !$characterLog->dry() ){
-            $log = $this->getNewLog();
-            $log->shipTypeId = $characterLog->shipTypeId;
-            $log->shipTypeName = $characterLog->shipTypeName;
-            $log->shipMass = $characterLog->shipMass;
-            $log->characterId = $characterLog->characterId->_id;
-            $log->characterName = $characterLog->characterId->name;
+    public function logMass(CharacterLogModel $characterLog, int $fromSystemId, int $targetSystemId) : self {
+        if( $characterLog->dry() ){
+            return $this;
+        }
+
+        $connectionId = (int)$this->_id;
+        $characterId  = (int)$characterLog->characterId->_id;
+        $dedupeKey    = $connectionId . '_' . $characterId . '_' . $fromSystemId . '_' . $targetSystemId;
+
+        $log = $this->getNewLog();
+        $log->shipTypeId     = $characterLog->shipTypeId;
+        $log->shipTypeName   = $characterLog->shipTypeName;
+        $log->shipMass       = $characterLog->shipMass;
+        $log->characterId    = $characterId;
+        $log->characterName  = $characterLog->characterId->name;
+        $log->sourceSystemId = $fromSystemId;
+        $log->targetSystemId = $targetSystemId;
+        $log->dedupeKey      = $dedupeKey;
+
+        try {
             $log->save();
+        } catch (\Exception $e) {
+            $code = $e->getCode();
+            $msg  = $e->getMessage();
+            if ( $code === 23000 || $code === 1062 || strpos($msg, 'Duplicate entry') !== false || strpos($msg, 'duplicate key') !== false ) {
+                return $this;
+            }
+            throw $e;
         }
 
         return $this;

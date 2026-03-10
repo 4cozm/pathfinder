@@ -70,6 +70,22 @@ class ConnectionLogModel extends AbstractPathfinderModel {
             'type' => Schema::DT_VARCHAR128,
             'nullable' => false,
             'default' => ''
+        ],
+        'sourceSystemId' => [
+            'type' => Schema::DT_INT,
+            'nullable' => true,
+            'default' => null
+        ],
+        'targetSystemId' => [
+            'type' => Schema::DT_INT,
+            'nullable' => true,
+            'default' => null
+        ],
+        'dedupeKey' => [
+            'type' => Schema::DT_VARCHAR128,
+            'nullable' => true,
+            'default' => null,
+            'unique' => true
         ]
     ];
 
