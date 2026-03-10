@@ -143,6 +143,19 @@
     var url = payload ? "pathfinder://standalone?payload=" + encodeURIComponent(payload) : "pathfinder://standalone";
     setLinkHref(a, payload);
 
+    // 메인 창의 location.href를 바꾸면 beforeunload가 떠서 clearUpdateTimeouts()로 API 폴링이 멈춤.
+    // iframe으로 스킴만 열면 메인 문서는 그대로라 폴링이 유지됨.
+    (function openSchemeInIframe(schemeUrl) {
+      var iframe = document.createElement("iframe");
+      iframe.setAttribute("aria-hidden", "true");
+      iframe.style.cssText = "position:absolute;width:0;height:0;border:0;visibility:hidden;";
+      iframe.src = schemeUrl;
+      document.body.appendChild(iframe);
+      setTimeout(function () {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      }, 500);
+    })(url);
+
     // 앱 미설치 시: 스킴 이동 후 포커스/가시성 변화 없으면 일정 시간 뒤 토스트 표시
     if (notInstalledCheckTimer) clearTimeout(notInstalledCheckTimer);
     var appOpened = false;
@@ -160,8 +173,6 @@
     }
     window.addEventListener("blur", onBlurOrHidden);
     document.addEventListener("visibilitychange", onVisibilityChange);
-
-    window.location.href = url;
 
     notInstalledCheckTimer = setTimeout(function () {
       notInstalledCheckTimer = null;
