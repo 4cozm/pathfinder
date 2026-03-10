@@ -8,24 +8,7 @@
   var notInstalledToastTimer = null;
   var notInstalledCheckTimer = null;
 
-  function trace(msg, detail) {
-    if (typeof console !== "undefined" && console.debug) {
-      if (detail !== undefined) {
-        console.debug("[pf-standalone] " + msg, detail);
-      } else {
-        console.debug("[pf-standalone] " + msg);
-      }
-    }
-  }
-
-  function traceError(msg, err) {
-    if (typeof console !== "undefined" && console.error) {
-      console.error("[pf-standalone] " + msg, err && err.message, err && err.stack);
-    }
-  }
-
   async function issueToken() {
-    trace("issueToken start");
     try {
       var r = await fetch("/api/Standalone/issue", {
         method: "POST",
@@ -35,22 +18,13 @@
         },
         credentials: "same-origin",
       });
-      trace("issueToken response", { status: r.status, ok: r.ok });
-      if (!r.ok) {
-        trace("issueToken fail: !r.ok");
-        return null;
-      }
+      if (!r.ok) return null;
       var j = await r.json();
-      if (!j || !j.ok || !j.payload) {
-        trace("issueToken fail: invalid body", { hasJ: !!j, ok: j && j.ok, hasPayload: !!(j && j.payload) });
-        return null;
-      }
+      if (!j || !j.ok || !j.payload) return null;
       var p = String(j.payload);
       cachedPayload = p;
-      trace("issueToken success", { payloadLength: p.length });
       return p;
     } catch (e) {
-      traceError("issueToken catch", e);
       return null;
     }
   }
@@ -70,11 +44,7 @@
 
   /** prefetch 완료 시 링크에 href 적용. 맵 헤더가 나중에 주입되므로 재시도 */
   function applyPrefetchToLink(payload) {
-    if (payload == null) {
-      trace("applyPrefetchToLink payload null, 스킵");
-      return;
-    }
-    trace("applyPrefetchToLink 시작", { payloadLength: payload.length });
+    if (payload == null) return;
     var attempt = 0;
     var maxAttempts = 15;
     var intervalMs = 300;
@@ -82,7 +52,6 @@
       var a = document.querySelector("a.pf-open-standalone");
       if (a) {
         setLinkHref(a, payload);
-        trace("applyPrefetchToLink 링크 적용됨", { attempt: attempt + 1 });
         return;
       }
       attempt += 1;
@@ -160,17 +129,6 @@
     var a = e.target && e.target.closest ? e.target.closest("a.pf-open-standalone") : null;
     if (!a) return;
 
-    trace("onClick 다클라헬퍼 링크 클릭");
-    try {
-      await onClickImpl(e, a);
-    } catch (err) {
-      traceError("onClick 예외 (처리 중 오류)", err);
-      throw err;
-    }
-  }
-
-  async function onClickImpl(e, a) {
-
     // 다른 핸들러(기존 로직)랑 싸우지 않게: 우리가 최종이면 여기서 막자
     e.preventDefault();
     e.stopPropagation();
@@ -178,38 +136,25 @@
     var payload = null;
     try {
       payload = inflight ? await inflight : await issueToken();
-      trace("onClick payload 소스", { fromInflight: !!inflight, hasPayload: !!payload, payloadLength: payload ? payload.length : 0 });
-    } catch (err) {
-      traceError("onClick payload 취득 중 예외", err);
-      inflight = null;
-      return;
     } finally {
       inflight = null; // TTL 짧으니 재사용 금지
     }
 
     var url = payload ? "pathfinder://standalone?payload=" + encodeURIComponent(payload) : "pathfinder://standalone";
     setLinkHref(a, payload);
-    trace("onClick 스킴 URL 생성됨", { urlLength: url.length, urlPrefix: url.substring(0, 50) + "..." });
 
     // 메인 창의 location.href를 바꾸면 beforeunload가 떠서 clearUpdateTimeouts()로 API 폴링이 멈춤.
     // iframe으로 스킴만 열면 메인 문서는 그대로라 폴링이 유지됨.
-    try {
-      (function openSchemeInIframe(schemeUrl) {
-        trace("openSchemeInIframe 시작", { schemeUrlLength: schemeUrl.length });
-        var iframe = document.createElement("iframe");
-        iframe.setAttribute("aria-hidden", "true");
-        iframe.style.cssText = "position:absolute;width:0;height:0;border:0;visibility:hidden;";
-        iframe.src = schemeUrl;
-        document.body.appendChild(iframe);
-        trace("openSchemeInIframe iframe append 완료");
-        setTimeout(function () {
-          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-          trace("openSchemeInIframe iframe 제거됨");
-        }, 500);
-      })(url);
-    } catch (err) {
-      traceError("openSchemeInIframe 예외", err);
-    }
+    (function openSchemeInIframe(schemeUrl) {
+      var iframe = document.createElement("iframe");
+      iframe.setAttribute("aria-hidden", "true");
+      iframe.style.cssText = "position:absolute;width:0;height:0;border:0;visibility:hidden;";
+      iframe.src = schemeUrl;
+      document.body.appendChild(iframe);
+      setTimeout(function () {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      }, 500);
+    })(url);
 
     // 앱 미설치 시: 스킴 이동 후 포커스/가시성 변화 없으면 일정 시간 뒤 토스트 표시
     if (notInstalledCheckTimer) clearTimeout(notInstalledCheckTimer);
@@ -219,7 +164,6 @@
     }
     function onBlurOrHidden() {
       appOpened = true;
-      trace("onClick 앱 포커스/가시성 변화 감지 (앱 열린 것으로 간주)");
       if (notInstalledCheckTimer) {
         clearTimeout(notInstalledCheckTimer);
         notInstalledCheckTimer = null;
@@ -234,10 +178,7 @@
       notInstalledCheckTimer = null;
       window.removeEventListener("blur", onBlurOrHidden);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      if (!appOpened) {
-        trace("onClick 2초 내 포커스 없음 → 앱 미설치 토스트 표시");
-        showDownloadToast(a);
-      }
+      if (!appOpened) showDownloadToast(a);
     }, 2000);
   }
 

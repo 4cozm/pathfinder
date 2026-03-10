@@ -1090,14 +1090,6 @@ define([
             changes.characterStationId ||
             changes.characterStructureId
         ){
-            if(typeof console !== 'undefined' && console.debug){
-                console.debug('[pf-header] updateHeaderCharacterLocation scheduled', {
-                    characterSystemId: changes.characterSystemId,
-                    characterShipType: changes.characterShipType,
-                    characterStationId: changes.characterStationId,
-                    characterStructureId: changes.characterStructureId
-                });
-            }
             updateTasks.push(updateHeaderCharacterLocation(changes.characterShipType));
         }
 
@@ -1170,19 +1162,12 @@ define([
                 let shipTypeId = Util.getObjVal(shipData, 'typeId') || 0;
                 let shipTypeName = Util.getObjVal(shipData, 'typeName') || '';
 
-                if(typeof console !== 'undefined' && console.debug){
-                    console.debug('[pf-header] updateHeaderCharacterLocation run', { changedShip: changedShip, shipTypeId: shipTypeId });
-                }
-
                 // reuse existing ship img when ship unchanged to avoid re-requesting evetech (same URL = rate limit)
                 if(!changedShip && shipTypeId){
                     let $existingImg = userLocationElement.find('img.pf-head-image');
                     let existingSrc = $existingImg.attr('src') || '';
                     if($existingImg.length && existingSrc.indexOf('/types/' + shipTypeId + '/') !== -1){
                         $detachedShipImg = $existingImg.detach();
-                        if(typeof console !== 'undefined' && console.debug){
-                            console.debug('[pf-header] ship img reused (no evetech request)', { shipTypeId: shipTypeId });
-                        }
                     }
                 }
 
@@ -1237,9 +1222,6 @@ define([
 
                     if(isCurrentLocation && shipTypeId && !$detachedShipImg){
                         // show ship image (only when not reusing existing img to avoid evetech re-request)
-                        if(typeof console !== 'undefined' && console.debug){
-                            console.debug('[pf-header] ship img in HTML (evetech request)', { shipTypeId: shipTypeId });
-                        }
                         breadcrumbHtml += '<img class="pf-head-image --right" ';
                         breadcrumbHtml += 'src="' + Util.eveImageUrl('types', shipTypeId) + '" ';
                         breadcrumbHtml += 'title="' + shipTypeName + '" ';
