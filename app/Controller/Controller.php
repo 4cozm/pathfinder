@@ -743,6 +743,15 @@ class Controller {
             $errorData = $f3->get('ERROR');
             $exception = $f3->get('EXCEPTION');
 
+            // log 500 errors to stderr so docker logs show the actual cause
+            if(($errorData['code'] ?? 0) == 500){
+                error_log('[Pathfinder 500] ' . ($errorData['text'] ?? 'unknown'));
+                if(!empty($errorData['trace'])){
+                    $trace = is_array($errorData['trace']) ? implode("\n", $errorData['trace']) : $errorData['trace'];
+                    error_log('[Pathfinder 500 trace] ' . $trace);
+                }
+            }
+
             if($exception instanceof PathfinderException){
                 // ... handle Pathfinder exceptions (e.g. validation Exceptions,..)
                 $error = $exception->getError();
