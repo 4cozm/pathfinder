@@ -262,6 +262,7 @@ class CharacterModel extends AbstractPathfinderModel {
             $characterData->shared              = $this->shared;
             $characterData->logLocation         = $this->logLocation;
             $characterData->selectLocation      = $this->selectLocation;
+            $characterData->adminMemo           = $this->adminMemo;
 
             // check for corporation
             if($corporation = $this->getCorporation()){

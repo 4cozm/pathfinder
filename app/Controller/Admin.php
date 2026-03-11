@@ -154,11 +154,19 @@ class Admin extends Controller{
                             break;
                         case 'savepersonal':
                             $objectId = (int)$parts[2];
+                            // [AI NOTE] IMPORTANT: Always use POST + array_merge for settings forms.
+                            // GET queries from HTML forms might be stripped by the server/proxy (e.g. Traefik).
                             $values  = array_merge((array)$f3->get('GET'), (array)$f3->get('POST'));
+
+                            // [DEBUG LOG]
+                            error_log(sprintf('--- Admin::savePersonal --- Character: %s, ObjectId: %d, Method: %s', $character->name, $objectId, $f3->get('VERB')));
+                            error_log('Values: ' . print_r($values, true));
+
                             $this->savePersonalSettings($character, $objectId, $values);
 
                             $f3->reroute('@admin(@*=/' . $parts[0] . ')');
                             break;
+
                         case 'removepersonal':
                             $objectId = (int)$parts[2];
                             $this->removePersonalSettings($character, $objectId);
@@ -293,7 +301,7 @@ class Admin extends Controller{
 
         /** @var CharacterModel $targetCharacter */
         $targetCharacter = CharacterModel::getNew('CharacterModel');
-        // UID(_id)로 캐릭터 로드
+        // id 컬럼으로 캐릭터 로드
         $targetCharacter->load(['id = ?', $targetCharacterId]);
         
         if(!$targetCharacter->valid()){
@@ -302,7 +310,7 @@ class Admin extends Controller{
             try {
                 $charData = $sso->getCharacterData($targetCharacterId);
                 if(!empty($charData->character)){
-                    $targetCharacter->_id = (int)$charData->character['id'];
+                    $targetCharacter->id = (int)$charData->character['id'];
                     $targetCharacter->name = $charData->character['name'];
                     // 기본 역할 설정 (MEMBER)
                     $targetCharacter->roleId = RoleModel::getDefaultRole();
@@ -362,12 +370,12 @@ class Admin extends Controller{
             /** @var \Exodus4D\Pathfinder\Model\Pathfinder\CharacterRightModel $cr */
             $cr = CharacterModel::getNew('CharacterRightModel');
             // characterId 필드는 CharacterModel의 _id와 매핑됨
-            $cr->load(['characterId = ? AND rightId = ?', $targetCharacter->_id, $rightId]);
+            $cr->load(['characterId = ? AND rightId = ?', $targetCharacter->id, $rightId]);
 
             if($isInit){
                 // 최초 추가: DB에 없으면 active=0으로 신규 생성
                 if($cr->dry()){
-                    $cr->characterId = $targetCharacter->_id;
+                    $cr->characterId = $targetCharacter->id;
                     $cr->rightId     = $rightId;
                     $cr->setActive(false);
                     $cr->save();
@@ -380,7 +388,7 @@ class Admin extends Controller{
                 if($isActive){
                     // 기존 레코드 없으면 새로 생성, 있으면 update
                     if($cr->dry()){
-                         $cr->characterId = $targetCharacter->_id;
+                         $cr->characterId = $targetCharacter->id;
                          $cr->rightId     = $rightId;
                     }
                     $cr->setActive(true);
