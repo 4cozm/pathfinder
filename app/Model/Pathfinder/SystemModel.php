@@ -19,12 +19,12 @@ class SystemModel extends AbstractMapTrackingModel {
     /**
      * system position x max
      */
-    const MAX_POS_X                         = 2440;
+    const MAX_POS_X                         = 4000;
 
     /**
      * system position y max
      */
-    const MAX_POS_Y                         = 1480;
+    const MAX_POS_Y                         = 3500;
 
     /**
      * max count of history signature data in cache

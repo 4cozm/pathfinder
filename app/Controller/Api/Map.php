@@ -896,12 +896,9 @@ class Map extends Controller\AccessController {
                         $addSourceSystem = false;
                         $addTargetSystem = false;
                         $addConnection = false;
-                        error_log("updateMapByCharacter skip: no valid placement basis for source {$sourceSystem->systemId} / target {$targetSystem->systemId}");
                     } else {
                         $systemPosX = $placementResult['x'];
                         $systemPosY = $placementResult['y'];
-                        $basis = $placementResult['basis'];
-                        error_log("[placement:accepted] mapId={$map->_id} charId={$character->_id} basis={$basis} x={$systemPosX} y={$systemPosY}");
                     }
 
                     // save source system =============================================================================
@@ -924,7 +921,6 @@ class Map extends Controller\AccessController {
                                 // increase system position (prevent overlapping)
                                 $systemPosX = $sourceSystem->posX + $systemOffsetX;
                                 $systemPosY = $sourceSystem->posY + $systemOffsetY;
-                                error_log("updateMapByCharacter: using source anchor to calculate next system position ({$systemPosX}, {$systemPosY})");
                             }
                         }
                     }
@@ -948,7 +944,6 @@ class Map extends Controller\AccessController {
                                 $systemPosX = $sourceSystem->posX + $systemOffsetX;
                                 $systemPosY = $sourceSystem->posY + $systemOffsetY;
                             }
-                            error_log("updateMapByCharacter: using anchor for new target system position ({$systemPosX}, {$systemPosY})");
                         }
                     }
 
@@ -1059,7 +1054,7 @@ class Map extends Controller\AccessController {
         array $newSystemPositions,
         int $targetSystemId
     ): ?array {
-        error_log("[placement-debug] Starting resolvePlacementPosition. sourceExists=" . ($sourceExists ? '1' : '0') . ", targetExists=" . ($targetExists ? '1' : '0') . ", targetSystemId={$targetSystemId}");
+
 
         // 1. client-location hint
         if (
@@ -1067,7 +1062,6 @@ class Map extends Controller\AccessController {
             isset($newSystemPositions['location']['systemId'], $newSystemPositions['location']['position']['x'], $newSystemPositions['location']['position']['y']) &&
             (int)$newSystemPositions['location']['systemId'] === $targetSystemId
         ) {
-            error_log("[placement-debug] matched: client-location");
             return [
                 'x' => (int)$newSystemPositions['location']['position']['x'],
                 'y' => (int)$newSystemPositions['location']['position']['y'],
@@ -1117,18 +1111,16 @@ class Map extends Controller\AccessController {
             $baseY = $sourceSystem->posY;
             $sId = (int)$sourceSystem->systemId;
 
-            error_log("[placement-debug] testing source-anchor ({$baseX}, {$baseY}) systemId={$sId}");
+
             foreach ($searchOffsets as $offset) {
                 $checkX = $baseX + $offset[0];
                 $checkY = $baseY + $offset[1];
                 if ($isPositionFree($checkX, $checkY, $sId)) {
-                    error_log("[placement-debug] matched: source-anchor (free grid) at ({$checkX}, {$checkY})");
                     return ['x' => $checkX, 'y' => $checkY, 'basis' => 'source-anchor'];
                 }
             }
             
             // 8방향 모두 꽉 찼으면 기본 offset 사용 (Fallback)
-            error_log("[placement-debug] matched: source-anchor (all grids full, fallback)");
             return [
                 'x' => $baseX + 130,
                 'y' => $baseY,
@@ -1142,7 +1134,7 @@ class Map extends Controller\AccessController {
             $baseY = $targetSystem->posY;
             $tId = (int)$targetSystem->systemId;
 
-            error_log("[placement-debug] testing target-anchor ({$baseX}, {$baseY}) systemId={$tId}");
+
             // target 기준으로는 반대방향(좌, 상, 하, 우 등) 우선
             $targetOffsets = [
                 [-130, 0], [0, -130], [0, 130], [130, 0],
@@ -1153,12 +1145,10 @@ class Map extends Controller\AccessController {
                 $checkX = $baseX + $offset[0];
                 $checkY = $baseY + $offset[1];
                 if ($isPositionFree($checkX, $checkY, $tId)) {
-                    error_log("[placement-debug] matched: target-anchor (free grid) at ({$checkX}, {$checkY})");
                     return ['x' => $checkX, 'y' => $checkY, 'basis' => 'target-anchor'];
                 }
             }
 
-            error_log("[placement-debug] matched: target-anchor (all grids full, fallback)");
             return [
                 'x' => $baseX - 130, 
                 'y' => $baseY,
@@ -1178,7 +1168,7 @@ class Map extends Controller\AccessController {
                 $posX += 130;
                 $safetyCounter++;
             }
-            error_log("[placement-debug] matched: validated-defaults. posX={$posX}, posY={$posY} (safetyCounter={$safetyCounter})");
+
             return [
                 'x' => $posX,
                 'y' => $posY,
@@ -1187,7 +1177,7 @@ class Map extends Controller\AccessController {
         }
 
         // 5. block creation if no active hints/anchors (blind creation)
-        error_log("[placement-debug] FALLBACK: blind creation blocked (returning null)");
+
         return null;
     }
 
