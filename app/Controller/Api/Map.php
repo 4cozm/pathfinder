@@ -1076,15 +1076,26 @@ class Map extends Controller\AccessController {
         }
 
         // 공통: 겹침 판정 헬퍼 함수
+        // $map->systems 직접 접근은 Cortex ORM에서 relFind 없이 null을 반환하므로
+        // relFind를 통해 active=1인 시스템 목록을 명시적으로 로드한다
         $map = null;
         if ($sourceSystem && $sourceExists) $map = $sourceSystem->mapId;
         elseif ($targetSystem && $targetExists) $map = $targetSystem->mapId;
 
-        $isPositionFree = function(int $x, int $y) use ($map): bool {
-            if (!$map || empty($map->systems)) return true;
-            $overlapThreshold = 30; // 30px 이내면 겹침으로 간주
-            foreach ($map->systems as $sys) {
-                if ($sys->active && abs($sys->posX - $x) < $overlapThreshold && abs($sys->posY - $y) < $overlapThreshold) {
+        $existingSystems = [];
+        if ($map && $map->_id) {
+            $sysModel = Pathfinder\AbstractPathfinderModel::getNew('SystemModel');
+            $existingSystems = $sysModel->find([
+                'mapId = :mapId AND active = :active',
+                ':mapId' => $map->_id,
+                ':active' => 1
+            ]) ?: [];
+        }
+
+        $isPositionFree = function(int $x, int $y) use ($existingSystems): bool {
+            $overlapThreshold = 130; // 노드 간격이 130px이므로 동일 간격을 threshold로 사용
+            foreach ($existingSystems as $sys) {
+                if (abs($sys->posX - $x) < $overlapThreshold && abs($sys->posY - $y) < $overlapThreshold) {
                     return false;
                 }
             }
