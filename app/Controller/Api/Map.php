@@ -885,15 +885,23 @@ class Map extends Controller\AccessController {
                         $addTargetSystem = false;
                     }
 
-                    // Blind placement prevention =====================================================================
-                    $hasClientPlacement = !empty($newSystemPositions['location']) && isset($newSystemPositions['location']['systemId'], $newSystemPositions['location']['position']['x'], $newSystemPositions['location']['position']['y']);
-                    $anchorExists = $sourceExists || $targetExists;
+                    // Blind placement prevention & position resolution ===============================================
+                    $placementResult = $this->resolvePlacementPosition(
+                        $sourceSystem, $targetSystem, 
+                        $sourceExists, $targetExists, 
+                        $newSystemPositions, $targetSystemId
+                    );
 
-                    if (!$hasClientPlacement && !$anchorExists) {
+                    if (!$placementResult) {
                         $addSourceSystem = false;
                         $addTargetSystem = false;
                         $addConnection = false;
-                        error_log("updateMapByCharacter skip: no client placement and no anchor for source {$sourceSystem->systemId} / target {$targetSystem->systemId}");
+                        error_log("updateMapByCharacter skip: no valid placement basis for source {$sourceSystem->systemId} / target {$targetSystem->systemId}");
+                    } else {
+                        $systemPosX = $placementResult['x'];
+                        $systemPosY = $placementResult['y'];
+                        $basis = $placementResult['basis'];
+                        error_log("[placement:accepted] mapId={$map->_id} charId={$character->_id} basis={$basis} x={$systemPosX} y={$systemPosY}");
                     }
 
                     // save source system =============================================================================
@@ -928,13 +936,19 @@ class Map extends Controller\AccessController {
                         !$targetExists &&
                         $sourceExists
                     ){
+                        // target 좌표는 resolver가 줬거나 위에서 source 계산 직후 만든 offset 값이 들어있어야 한다.
+                        // $systemPosX, $systemPosY는 위에서 계산된 상태 그대로 활용
                         if(!empty($defaultPositions[1])){
                             $systemPosX = (int)$defaultPositions[1]['x'];
                             $systemPosY = (int)$defaultPositions[1]['y'];
                         }else{
-                            $systemPosX = $sourceSystem->posX + $systemOffsetX;
-                            $systemPosY = $sourceSystem->posY + $systemOffsetY;
-                            error_log("updateMapByCharacter: using source anchor for new target system position ({$systemPosX}, {$systemPosY})");
+                            // sourceExists=true 이면 resolver에서 계산된 값이 이미 있음
+                            // 단, 여기서 source가 방금 추가되어 offset 계산된거면 활용
+                            if (!$placementResult) {
+                                $systemPosX = $sourceSystem->posX + $systemOffsetX;
+                                $systemPosY = $sourceSystem->posY + $systemOffsetY;
+                            }
+                            error_log("updateMapByCharacter: using anchor for new target system position ({$systemPosX}, {$systemPosY})");
                         }
                     }
 
@@ -1025,7 +1039,85 @@ class Map extends Controller\AccessController {
     }
 
     /**
-     * get connectionData
+     * Determine final (x, y) for a new system.
+     * Priority: client-location hint > source-anchor > target-anchor > validated-defaults > block
+     * Returns null if no valid basis found (blind creation prevention).
+     *
+     * @param AbstractModel|null $sourceSystem
+     * @param AbstractModel|null $targetSystem
+     * @param bool $sourceExists
+     * @param bool $targetExists
+     * @param array $newSystemPositions
+     * @param int $targetSystemId
+     * @return array|null ['x'=>int, 'y'=>int, 'basis'=>string]
+     */
+    protected function resolvePlacementPosition(
+        $sourceSystem,
+        $targetSystem,
+        bool $sourceExists,
+        bool $targetExists,
+        array $newSystemPositions,
+        int $targetSystemId
+    ): ?array {
+        error_log("[placement-debug] Starting resolvePlacementPosition. sourceExists=" . ($sourceExists ? '1' : '0') . ", targetExists=" . ($targetExists ? '1' : '0') . ", targetSystemId={$targetSystemId}");
+
+        // 1. client-location hint
+        if (
+            !empty($newSystemPositions['location']) &&
+            isset($newSystemPositions['location']['systemId'], $newSystemPositions['location']['position']['x'], $newSystemPositions['location']['position']['y']) &&
+            (int)$newSystemPositions['location']['systemId'] === $targetSystemId
+        ) {
+            error_log("[placement-debug] matched: client-location");
+            return [
+                'x' => (int)$newSystemPositions['location']['position']['x'],
+                'y' => (int)$newSystemPositions['location']['position']['y'],
+                'basis' => 'client-location'
+            ];
+        }
+
+        $systemOffsetX = 130;
+        $systemOffsetY = 0;
+
+        // 2. source-anchor
+        if ($sourceExists && $sourceSystem) {
+            error_log("[placement-debug] matched: source-anchor");
+            return [
+                'x' => $sourceSystem->posX + $systemOffsetX,
+                'y' => $sourceSystem->posY + $systemOffsetY,
+                'basis' => 'source-anchor'
+            ];
+        }
+
+        // 3. target-anchor
+        if ($targetExists && $targetSystem) {
+            error_log("[placement-debug] matched: target-anchor");
+            return [
+                'x' => $targetSystem->posX - $systemOffsetX, // default opposite of source offset
+                'y' => $targetSystem->posY - $systemOffsetY,
+                'basis' => 'target-anchor'
+            ];
+        }
+
+        // 4. validated defaults (client hint for next empty position)
+        $defaultPositions = (array)($newSystemPositions['defaults'] ?? []);
+        $posX = (int)($defaultPositions[0]['x'] ?? 0);
+        $posY = (int)($defaultPositions[0]['y'] ?? 0);
+
+        if ($posX > 0 || $posY > 30) {
+            error_log("[placement-debug] matched: validated-defaults. posX={$posX}, posY={$posY}");
+            return [
+                'x' => $posX,
+                'y' => $posY,
+                'basis' => 'validated-defaults'
+            ];
+        }
+
+        // 5. block creation if no active hints/anchors (blind creation)
+        error_log("[placement-debug] FALLBACK: blind creation blocked (returning null)");
+        return null;
+    }
+
+    /**
      * @param \Base $f3
      * @throws \Exception
      */

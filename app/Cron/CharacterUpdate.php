@@ -251,6 +251,14 @@ class CharacterUpdate extends AbstractCron
 
         // helper: Map.php의 protected updateMapByCharacter() 호출 래퍼
         $tracker = new class extends \Exodus4D\Pathfinder\Controller\Api\Map {
+            /**
+             * [DESIGN NOTE] Placement Architecture
+             * Web path sends newSystemPositions (defaults + location) as optional hints,
+             * Helper path sends empty newSystemPositions → no hints.
+             * The helper MUST NOT calculate positions.
+             * The server resolver `updateMapByCharacter` is the single authority for placement decisions.
+             * Web UX semantics are NOT changed by this.
+             */
             public function track(
                 \Exodus4D\Pathfinder\Model\Pathfinder\MapModel $map,
                 \Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel $character
@@ -264,7 +272,6 @@ class CharacterUpdate extends AbstractCron
         };
 
         $charsTotal     = 0;
-        $charsProcessed = 0;
         $updated        = 0;
         $skippedExpired = 0;
         $errors         = 0;
