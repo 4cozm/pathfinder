@@ -62,7 +62,7 @@ class StructureModel extends AbstractPathfinderModel {
             ]
         ],
         'name' => [
-            'type' => Schema::DT_VARCHAR128,
+            'type' => Schema::DT_VARCHAR512,
             'nullable' => false,
             'default' => ''
         ],

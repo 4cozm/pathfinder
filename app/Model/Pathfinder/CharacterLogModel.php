@@ -81,7 +81,7 @@ class CharacterLogModel extends AbstractPathfinderModel {
             'activity-log' => true
         ],
         'shipName' => [
-            'type' => Schema::DT_VARCHAR128,
+            'type' => Schema::DT_VARCHAR256,
             'nullable' => false,
             'default' => ''
         ],
@@ -111,7 +111,7 @@ class CharacterLogModel extends AbstractPathfinderModel {
             'activity-log' => true
         ],
         'structureName' => [
-            'type' => Schema::DT_VARCHAR128,
+            'type' => Schema::DT_VARCHAR512,
             'nullable' => false,
             'default' => '',
             'activity-log' => true
