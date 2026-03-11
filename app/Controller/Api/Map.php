@@ -881,14 +881,19 @@ class Map extends Controller\AccessController {
                         $targetSystem->systemId === 30000142
                     ){
                         $addConnection = false;
+                        $addSourceSystem = false;
+                        $addTargetSystem = false;
+                    }
 
-                        if($sourceSystem->systemId === 30000142){
-                            $addSourceSystem = false;
-                        }
+                    // Blind placement prevention =====================================================================
+                    $hasClientPlacement = !empty($newSystemPositions['location']) && isset($newSystemPositions['location']['systemId'], $newSystemPositions['location']['position']['x'], $newSystemPositions['location']['position']['y']);
+                    $anchorExists = $sourceExists || $targetExists;
 
-                        if($targetSystem->systemId === 30000142){
-                            $addTargetSystem = false;
-                        }
+                    if (!$hasClientPlacement && !$anchorExists) {
+                        $addSourceSystem = false;
+                        $addTargetSystem = false;
+                        $addConnection = false;
+                        error_log("updateMapByCharacter skip: no client placement and no anchor for source {$sourceSystem->systemId} / target {$targetSystem->systemId}");
                     }
 
                     // save source system =============================================================================
@@ -911,6 +916,7 @@ class Map extends Controller\AccessController {
                                 // increase system position (prevent overlapping)
                                 $systemPosX = $sourceSystem->posX + $systemOffsetX;
                                 $systemPosY = $sourceSystem->posY + $systemOffsetY;
+                                error_log("updateMapByCharacter: using source anchor to calculate next system position ({$systemPosX}, {$systemPosY})");
                             }
                         }
                     }
@@ -928,6 +934,7 @@ class Map extends Controller\AccessController {
                         }else{
                             $systemPosX = $sourceSystem->posX + $systemOffsetX;
                             $systemPosY = $sourceSystem->posY + $systemOffsetY;
+                            error_log("updateMapByCharacter: using source anchor for new target system position ({$systemPosX}, {$systemPosY})");
                         }
                     }
 

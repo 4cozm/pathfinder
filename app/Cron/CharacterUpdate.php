@@ -256,10 +256,7 @@ class CharacterUpdate extends AbstractCron
                 \Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel $character
             ): \Exodus4D\Pathfinder\Model\Pathfinder\MapModel {
                 $positions = [
-                    'defaults' => [
-                        ['x' => 0,   'y' => 30],
-                        ['x' => 130, 'y' => 30],
-                    ],
+                    'defaults' => [],
                     'location' => [],
                 ];
                 return $this->updateMapByCharacter($map, $character, $positions);

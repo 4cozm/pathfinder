@@ -486,7 +486,12 @@ class ConnectionModel extends AbstractMapTrackingModel {
     }
 
     /**
-     * log new mass for this connection (idempotent: same jump fingerprint = no-op)
+     * Log mass for this connection (idempotent: same character + same jump = one record).
+     * Goal: one jump recorded once regardless of browser/standalone path.
+     * - Uses dedupeKey (connectionId_characterId_sourceSystemId_targetSystemId) + UNIQUE; no time-window heuristic.
+     * - Duplicate key on insert is treated as success (no-op), not error (no 500).
+     * - Connection selection (searchConnection / parallel-hole policy) is unchanged.
+     *
      * @param CharacterLogModel $characterLog
      * @param int $fromSystemId source system id (jump direction)
      * @param int $targetSystemId target system id (jump direction)
@@ -513,10 +518,13 @@ class ConnectionModel extends AbstractMapTrackingModel {
 
         try {
             $log->save();
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $code = $e->getCode();
-            $msg  = $e->getMessage();
-            if ( $code === 23000 || $code === 1062 || strpos($msg, 'Duplicate entry') !== false || strpos($msg, 'duplicate key') !== false ) {
+            $msg  = (string)$e->getMessage();
+            $isDuplicate = ( (int)$code === 1062 || (string)$code === '23000' || (int)$code === 23000 )
+                || stripos($msg, 'Duplicate entry') !== false
+                || stripos($msg, 'duplicate key') !== false;
+            if ( $isDuplicate ) {
                 return $this;
             }
             throw $e;
