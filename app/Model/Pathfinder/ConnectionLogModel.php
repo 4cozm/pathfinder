@@ -82,7 +82,7 @@ class ConnectionLogModel extends AbstractPathfinderModel {
             'default' => null
         ],
         'dedupeKey' => [
-            'type' => Schema::DT_VARCHAR128,
+            'type' => Schema::DT_VARCHAR256,
             'nullable' => true,
             'default' => null,
             'unique' => true
