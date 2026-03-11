@@ -147,14 +147,14 @@ class Admin extends Controller{
                     switch($parts[1]){
                         case 'save':
                             $objectId = (int)$parts[2];
-                            $values  = (array)$f3->get('GET');
+                            $values  = array_merge((array)$f3->get('GET'), (array)$f3->get('POST'));
                             $this->saveSettings($character, $objectId, $values);
 
                             $f3->reroute('@admin(@*=/' . $parts[0] . ')');
                             break;
                         case 'savepersonal':
                             $objectId = (int)$parts[2];
-                            $values  = (array)$f3->get('GET');
+                            $values  = array_merge((array)$f3->get('GET'), (array)$f3->get('POST'));
                             $this->savePersonalSettings($character, $objectId, $values);
 
                             $f3->reroute('@admin(@*=/' . $parts[0] . ')');
@@ -334,9 +334,13 @@ class Admin extends Controller{
         }
 
         // --- NEW: Save Memo ---
+        $logger = self::getLogger('ADMIN');
+        $logger->write(sprintf('savePersonalSettings called for char=%s, memo_isset=%d, memo_val=%s', $targetCharacterId, isset($settings['memo']), $settings['memo'] ?? 'null'));
+
         if(isset($settings['memo'])){
             $targetCharacter->adminMemo = trim($settings['memo']);
             $targetCharacter->save();
+            $logger->write(sprintf('saved memo: %s', $targetCharacter->adminMemo));
         }
         // -----------------------
 

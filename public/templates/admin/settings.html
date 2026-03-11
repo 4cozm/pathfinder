@@ -125,7 +125,7 @@
                 {* 등록된 개인 캐릭터 권한 목록 *}
                 <div class="row text-center" id="personal-rights-list">
                     <repeat group="{{ @tplSettings->characters }}" value="{{ @char }}" counter="{{ @charCount }}">
-                        <form role="form" class="form-horizontal" action="/admin/{{ @tplPage}}/savePersonal/{{ @char->_id }}">
+                        <form role="form" class="form-horizontal" method="POST" action="/admin/{{ @tplPage}}/savePersonal/{{ @char->_id }}">
                             <div class="col-sm-12 col-md-6 col-lg-4 pf-landing-pricing-panel">
                                 <div class="panel panel-default pricing-big">
                                     <div class="panel-heading text-left">
