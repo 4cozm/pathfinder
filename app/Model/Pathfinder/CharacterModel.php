@@ -235,6 +235,11 @@ class CharacterModel extends AbstractPathfinderModel {
         ],
         'characterRights' => [
             'has-many' => ['Exodus4D\Pathfinder\Model\Pathfinder\CharacterRightModel', 'characterId']
+        ],
+        'adminMemo' => [
+            'type' => Schema::DT_VARCHAR256,
+            'nullable' => true,
+            'default' => ''
         ]
     ];
 

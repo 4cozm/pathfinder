@@ -333,6 +333,13 @@ class Admin extends Controller{
             return;
         }
 
+        // --- NEW: Save Memo ---
+        if(isset($settings['memo'])){
+            $targetCharacter->adminMemo = trim($settings['memo']);
+            $targetCharacter->save();
+        }
+        // -----------------------
+
         $isInit = !empty($settings['init']);
         $personalRightsData = (array)($settings['rights'] ?? []);
 

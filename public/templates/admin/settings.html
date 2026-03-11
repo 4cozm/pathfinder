@@ -101,6 +101,9 @@
                                 </span>
                             </div>
                         </div>
+                        <div class="col-xs-12 col-sm-6 col-md-4">
+                            <input type="text" id="personal-memo-input" class="form-control" placeholder="메모 (선택, 예: 본캐 이름, 얼라 소속 등)">
+                        </div>
                     </div>
                     <div id="personal-preview" style="display:none; margin-top:15px;">
                         <div class="media">
@@ -132,6 +135,11 @@
                                         </h3>
                                     </div>
                                     <div class="panel-body">
+                                        <div class="form-group" style="padding: 0 15px;">
+                                            <label class="control-label text-left pf-help-light" style="display:block; text-align:left; font-size: 11px;">메모</label>
+                                            <input type="text" name="memo" class="form-control input-sm" placeholder="메모" value="{{ trim(@char->adminMemo) }}">
+                                        </div>
+                                        <hr style="margin: 10px 0;">
                                         <repeat group="{{ @char->getRights(null, ['addInactive' => true]) }}" value="{{ @right }}">
                                             <include href="templates/modules/personal_right_row.html" with="right={{ @right }}, character={{ @char }}"/>
                                         </repeat>
@@ -165,6 +173,7 @@
     var portrait  = document.getElementById('personal-portrait');
     var nameEl    = document.getElementById('personal-name');
     var corpEl    = document.getElementById('personal-corp');
+    var memoInput = document.getElementById('personal-memo-input');
     var addBtn    = document.getElementById('personal-add-btn');
     var errorEl   = document.getElementById('personal-error');
 
@@ -206,9 +215,10 @@
     addBtn.addEventListener('click', function(){
         var uid = parseInt(uidInput.value, 10);
         if(!uid) return;
+        var memo = encodeURIComponent(memoInput.value.trim());
         // savePersonal/0 with uid param — server creates a dummy inactive right entry
         // so the character appears in the list; actual rights are saved on form submit
-        window.location.href = '/admin/settings/savePersonal/' + uid + '?init=1';
+        window.location.href = '/admin/settings/savePersonal/' + uid + '?init=1&memo=' + memo;
     });
 
     // 폼 제출 시 저장 버튼 비활성화 (모든 personal rights form에 적용)
