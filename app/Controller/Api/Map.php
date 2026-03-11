@@ -1075,25 +1075,75 @@ class Map extends Controller\AccessController {
             ];
         }
 
-        $systemOffsetX = 130;
-        $systemOffsetY = 0;
+        // 공통: 겹침 판정 헬퍼 함수
+        $map = null;
+        if ($sourceSystem && $sourceExists) $map = $sourceSystem->mapId;
+        elseif ($targetSystem && $targetExists) $map = $targetSystem->mapId;
+
+        $isPositionFree = function(int $x, int $y) use ($map): bool {
+            if (!$map || empty($map->systems)) return true;
+            $overlapThreshold = 30; // 30px 이내면 겹침으로 간주
+            foreach ($map->systems as $sys) {
+                if ($sys->active && abs($sys->posX - $x) < $overlapThreshold && abs($sys->posY - $y) < $overlapThreshold) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        // 8방향 오프셋 배열 (우, 하, 상, 좌, 우하, 좌하, 우상, 좌상)
+        $searchOffsets = [
+            [130, 0], [0, 130], [0, -130], [-130, 0],
+            [130, 130], [-130, 130], [130, -130], [-130, -130]
+        ];
 
         // 2. source-anchor
         if ($sourceExists && $sourceSystem) {
-            error_log("[placement-debug] matched: source-anchor");
+            $baseX = $sourceSystem->posX;
+            $baseY = $sourceSystem->posY;
+
+            foreach ($searchOffsets as $offset) {
+                $checkX = $baseX + $offset[0];
+                $checkY = $baseY + $offset[1];
+                if ($isPositionFree($checkX, $checkY)) {
+                    error_log("[placement-debug] matched: source-anchor (free grid)");
+                    return ['x' => $checkX, 'y' => $checkY, 'basis' => 'source-anchor'];
+                }
+            }
+            
+            // 8방향 모두 꽉 찼으면 기본 offset 사용 (Fallback)
+            error_log("[placement-debug] matched: source-anchor (all grids full, fallback)");
             return [
-                'x' => $sourceSystem->posX + $systemOffsetX,
-                'y' => $sourceSystem->posY + $systemOffsetY,
+                'x' => $baseX + 130,
+                'y' => $baseY,
                 'basis' => 'source-anchor'
             ];
         }
 
         // 3. target-anchor
         if ($targetExists && $targetSystem) {
-            error_log("[placement-debug] matched: target-anchor");
+            $baseX = $targetSystem->posX;
+            $baseY = $targetSystem->posY;
+
+            // target 기준으로는 반대방향(좌, 상, 하, 우 등) 우선
+            $targetOffsets = [
+                [-130, 0], [0, -130], [0, 130], [130, 0],
+                [-130, -130], [130, -130], [-130, 130], [130, 130]
+            ];
+
+            foreach ($targetOffsets as $offset) {
+                $checkX = $baseX + $offset[0];
+                $checkY = $baseY + $offset[1];
+                if ($isPositionFree($checkX, $checkY)) {
+                    error_log("[placement-debug] matched: target-anchor (free grid)");
+                    return ['x' => $checkX, 'y' => $checkY, 'basis' => 'target-anchor'];
+                }
+            }
+
+            error_log("[placement-debug] matched: target-anchor (all grids full, fallback)");
             return [
-                'x' => $targetSystem->posX - $systemOffsetX, // default opposite of source offset
-                'y' => $targetSystem->posY - $systemOffsetY,
+                'x' => $baseX - 130, 
+                'y' => $baseY,
                 'basis' => 'target-anchor'
             ];
         }
