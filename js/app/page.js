@@ -1155,21 +1155,11 @@ define([
             let breadcrumbHtml = '';
             let logData = Util.getCurrentCharacterData('log');
             let logDataAll = [];
-            let $detachedShipImg = null;
 
             if(logData){
                 let shipData = Util.getObjVal(logData, 'ship');
                 let shipTypeId = Util.getObjVal(shipData, 'typeId') || 0;
                 let shipTypeName = Util.getObjVal(shipData, 'typeName') || '';
-
-                // reuse existing ship img when ship unchanged to avoid re-requesting evetech (same URL = rate limit)
-                if(!changedShip && shipTypeId){
-                    let $existingImg = userLocationElement.find('img.pf-head-image');
-                    let existingSrc = $existingImg.attr('src') || '';
-                    if($existingImg.length && existingSrc.indexOf('/types/' + shipTypeId + '/') !== -1){
-                        $detachedShipImg = $existingImg.detach();
-                    }
-                }
 
                 let stationData = Util.getObjVal(logData, 'station');
                 let stationId = Util.getObjVal(stationData, 'id') || 0;
@@ -1220,8 +1210,8 @@ define([
 
                     breadcrumbHtml += systemName;
 
-                    if(isCurrentLocation && shipTypeId && !$detachedShipImg){
-                        // show ship image (only when not reusing existing img to avoid evetech re-request)
+                    if(isCurrentLocation && shipTypeId){
+                        // show ship image
                         breadcrumbHtml += '<img class="pf-head-image --right" ';
                         breadcrumbHtml += 'src="' + Util.eveImageUrl('types', shipTypeId) + '" ';
                         breadcrumbHtml += 'title="' + shipTypeName + '" ';
@@ -1232,11 +1222,21 @@ define([
                 }
             }
 
+            // Skip DOM update if generated HTML is identical to cached HTML
+            let cachedHtml = userLocationElement.data('breadcrumbHtml');
+            if(breadcrumbHtml && breadcrumbHtml === cachedHtml && !changedShip){
+                resolve({
+                    action: 'updateHeaderCharacterLocation',
+                    data: {}
+                });
+                return;
+            }
+
+            // Update cache
+            userLocationElement.data('breadcrumbHtml', breadcrumbHtml);
+
             animateHeaderElement(userLocationElement, userLocationElement => {
                 userLocationElement.html(breadcrumbHtml);
-                if($detachedShipImg && $detachedShipImg.length){
-                    userLocationElement.find('li').last().find('span.pf-head-breadcrumb-item').append($detachedShipImg);
-                }
                 initHeaderTooltips(userLocationElement);
 
                 if(changedShip){
