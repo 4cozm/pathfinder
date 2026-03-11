@@ -294,7 +294,7 @@ class Admin extends Controller{
         /** @var CharacterModel $targetCharacter */
         $targetCharacter = CharacterModel::getNew('CharacterModel');
         // UID(_id)로 캐릭터 로드
-        $targetCharacter->load(['_id = ?', $targetCharacterId]);
+        $targetCharacter->load(['id = ?', $targetCharacterId]);
         
         if(!$targetCharacter->valid()){
             // DB에 없는 캐릭터인 경우 (한 번도 접속 안 함) -> ESI에서 정보 가져와 강제 생성
