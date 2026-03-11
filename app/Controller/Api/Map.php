@@ -1092,9 +1092,12 @@ class Map extends Controller\AccessController {
             ]) ?: [];
         }
 
-        $isPositionFree = function(int $x, int $y) use ($existingSystems): bool {
-            $overlapThreshold = 130; // 노드 간격이 130px이므로 동일 간격을 threshold로 사용
+        $isPositionFree = function(int $x, int $y, int $excludeSystemId = 0) use ($existingSystems): bool {
+            $overlapThreshold = 80; // 노드 간격(130px)보다 작게 설정하여 미세 오차로 인한 자기 자신 충돌 방지
             foreach ($existingSystems as $sys) {
+                // 현재 배치하려는 시스템(target)이거나 앵커 노드는 충돌 검사에서 제외
+                if ($excludeSystemId > 0 && (int)$sys->systemId === $excludeSystemId) continue;
+
                 if (abs($sys->posX - $x) < $overlapThreshold && abs($sys->posY - $y) < $overlapThreshold) {
                     return false;
                 }
@@ -1112,12 +1115,14 @@ class Map extends Controller\AccessController {
         if ($sourceExists && $sourceSystem) {
             $baseX = $sourceSystem->posX;
             $baseY = $sourceSystem->posY;
+            $sId = (int)$sourceSystem->systemId;
 
+            error_log("[placement-debug] testing source-anchor ({$baseX}, {$baseY}) systemId={$sId}");
             foreach ($searchOffsets as $offset) {
                 $checkX = $baseX + $offset[0];
                 $checkY = $baseY + $offset[1];
-                if ($isPositionFree($checkX, $checkY)) {
-                    error_log("[placement-debug] matched: source-anchor (free grid)");
+                if ($isPositionFree($checkX, $checkY, $sId)) {
+                    error_log("[placement-debug] matched: source-anchor (free grid) at ({$checkX}, {$checkY})");
                     return ['x' => $checkX, 'y' => $checkY, 'basis' => 'source-anchor'];
                 }
             }
@@ -1135,7 +1140,9 @@ class Map extends Controller\AccessController {
         if ($targetExists && $targetSystem) {
             $baseX = $targetSystem->posX;
             $baseY = $targetSystem->posY;
+            $tId = (int)$targetSystem->systemId;
 
+            error_log("[placement-debug] testing target-anchor ({$baseX}, {$baseY}) systemId={$tId}");
             // target 기준으로는 반대방향(좌, 상, 하, 우 등) 우선
             $targetOffsets = [
                 [-130, 0], [0, -130], [0, 130], [130, 0],
@@ -1145,8 +1152,8 @@ class Map extends Controller\AccessController {
             foreach ($targetOffsets as $offset) {
                 $checkX = $baseX + $offset[0];
                 $checkY = $baseY + $offset[1];
-                if ($isPositionFree($checkX, $checkY)) {
-                    error_log("[placement-debug] matched: target-anchor (free grid)");
+                if ($isPositionFree($checkX, $checkY, $tId)) {
+                    error_log("[placement-debug] matched: target-anchor (free grid) at ({$checkX}, {$checkY})");
                     return ['x' => $checkX, 'y' => $checkY, 'basis' => 'target-anchor'];
                 }
             }
@@ -1165,7 +1172,13 @@ class Map extends Controller\AccessController {
         $posY = (int)($defaultPositions[0]['y'] ?? 0);
 
         if ($posX > 0 || $posY > 30) {
-            error_log("[placement-debug] matched: validated-defaults. posX={$posX}, posY={$posY}");
+            // 기본 좌표(0,0 부근)도 겹칠 수 있으므로 빈 공간을 찾을 때까지 우측으로 이동
+            $safetyCounter = 0;
+            while (!$isPositionFree($posX, $posY) && $safetyCounter < 20) {
+                $posX += 130;
+                $safetyCounter++;
+            }
+            error_log("[placement-debug] matched: validated-defaults. posX={$posX}, posY={$posY} (safetyCounter={$safetyCounter})");
             return [
                 'x' => $posX,
                 'y' => $posY,
