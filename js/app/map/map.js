@@ -2713,6 +2713,8 @@ define([
                     dataExists = true;
                 }
 
+                if (this.data.option === 'mapMagnetizer' && !dataExists) { return; }
+
                 if(dataExists === this.data.toggle){
 
                     // toggle button class
