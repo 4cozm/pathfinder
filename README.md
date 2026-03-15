@@ -24,6 +24,9 @@ Issues should be reported in the [Issue](https://github.com/exodus4d/pathfinder/
 
 ***
 
+### Map UI
+- **Wormhole memo toast:** When a system with wormhole statics is first drawn, its description (memo) is shown as a speech-bubble toast above the system head for 10 seconds.
+
 ### Project structure
 <pre>
  ─╮

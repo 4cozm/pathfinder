@@ -483,6 +483,9 @@ define([
                 'top': newPosY
             });
 
+            // show wormhole memo toast once on DOM creation
+            showSystemMemoToast(system, getSystemMemoText(data));
+
         }else{
             system = $(system);
 
@@ -1565,6 +1568,45 @@ define([
     let isValidSystem = systemData => (Util.getObjVal(systemData, 'name') || '').length > 0;
 
     /**
+     * get normalized memo text from a wormhole system description
+     * @param systemData
+     * @returns {string}
+     */
+    let getSystemMemoText = systemData => {
+        let description = (Util.getObjVal(systemData, 'description') || '').toString();
+        let hasStatics = Array.isArray(systemData.statics) && systemData.statics.length > 0;
+
+        if(!hasStatics || !description.trim()){
+            return '';
+        }
+
+        return $('<div>').html(description).text().replace(/\s+/g, ' ').trim();
+    };
+
+    /**
+     * show memo toast above a newly created wormhole system
+     * @param system
+     * @param memoText
+     */
+    let showSystemMemoToast = (system, memoText) => {
+        if(memoText && memoText.length > 0){
+            let toast = $('<div>', {
+                class: 'pf-system-memo-toast',
+                text: memoText
+            });
+
+            system.find('.pf-system-memo-toast').remove();
+            system.append(toast);
+
+            setTimeout(() => {
+                toast.fadeOut(500, function(){
+                    $(this).remove();
+                });
+            }, 10000);
+        }
+    };
+
+    /**
      * show a temporary notification above a system
      * @param system
      * @param description
@@ -1646,8 +1688,11 @@ define([
                 system: newSystem
             };
 
-            // show temporary notification
-            showSystemNotification(newSystem, systemData.description);
+            // keep generic notification for non-wormhole systems
+            // (wormholes use the dedicated memo toast on initial DOM creation)
+            if(!getSystemMemoText(systemData)){
+                showSystemNotification(newSystem, systemData.description);
+            }
 
             // connect new system (if connection data is given)
             // -> Skip Jita connection (ESI logic might trigger this)
