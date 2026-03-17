@@ -808,12 +808,24 @@ define([
                 // find menu buttons by menuGroup
                 switch(menuGroup){
                     case 'mapOptions':
-                        // payload is mapConfig
+                        // payload is mapConfig (or { config: { id: mapId } })
                         let hasRightMapDelete = MapUtil.checkRight('map_delete', payload);
                         document.getElementById(Util.config.menuButtonMapDeleteId).classList.toggle('disabled', !hasRightMapDelete);
 
                         // active map -> remove loading classes
                         [...buttonGroup].forEach(button => button.classList.remove('loading'));
+
+                        // 마그네타이저 버튼: mapMagnetizer 값이 로컬 스토리지에 있을 때만 표시
+                        let mapId = payload && payload.config && payload.config.id;
+                        let magnetizerBtn = document.getElementById(Util.config.menuButtonMagnetizerId);
+                        if (magnetizerBtn && mapId) {
+                            Util.getLocalStore('map').getItem(mapId).then(dataStore => {
+                                let showMagnetizer = !!(dataStore && dataStore.hasOwnProperty('mapMagnetizer') && dataStore.mapMagnetizer);
+                                magnetizerBtn.style.display = showMagnetizer ? '' : 'none';
+                            });
+                        } else if (magnetizerBtn) {
+                            magnetizerBtn.style.display = 'none';
+                        }
                         break;
                     case 'userOptions':
                         // payload is boolean (true if valid character data exists)

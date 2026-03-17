@@ -2784,6 +2784,13 @@ define([
                     }else{
                         Util.getLocalStore('map').removeItem(`${this.mapContainer.data('id')}.${this.data.option}`);
                     }
+                    // mapMagnetizer off 시 메뉴 옵션 갱신으로 버튼 숨김
+                    if(this.data.option === 'mapMagnetizer'){
+                        $(document).trigger('pf:updateMenuOptions', {
+                            menuGroup: 'mapOptions',
+                            payload: { config: { id: this.mapContainer.data('id') } }
+                        });
+                    }
                 }else{
                     // toggle button class
                     button.addClass('active');
