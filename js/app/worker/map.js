@@ -21,26 +21,54 @@ let reconnectTimer = null;
 // 의도적 종료는 이 플래그로 명시하고, onclose는 플래그만 보고 재연결 여부를 결정한다.
 let intentionallyClosed = false;
 
+/** 맵 SharedWorker WS 진단 — 토큰·전체 URL 미포함, host만 */
+let mapWsHostFromUri = uri => {
+    if(!uri) return null;
+    try {
+        return new URL(uri).host;
+    }catch(e){
+        return null;
+    }
+};
+
+let logMapWsDiag = (event, details) => {
+    console.log('[PF][MapWS]', Object.assign({
+        ts: new Date().toISOString(),
+        event,
+        host: mapWsHostFromUri(wsUri)
+    }, details || {}));
+};
+
 let scheduleReconnect = () => {
     if(reconnectTimer !== null) return; // 중복 예약 방지
+    const delayMs = reconnectDelay;
+    const nextBackoffMs = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX);
+    logMapWsDiag('reconnect_scheduled', {
+        delayMs,
+        intentionallyClosed,
+        nextBackoffMs
+    });
     reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         if(socket === null && wsUri !== null && !intentionallyClosed){
             connectSocket(wsUri);
         }
-    }, reconnectDelay);
+    }, delayMs);
     // exponential backoff: 1s → 2s → 4s → … → 30s
-    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX);
+    reconnectDelay = nextBackoffMs;
 };
 
 // init "WebSocket" connection ========================================================================================
 let connectSocket = uri => {
+    logMapWsDiag('connect_attempt', { host: mapWsHostFromUri(uri) });
     socket = new WebSocket(uri);
 
     // "WebSocket" open -----------------------------------------------------------------------
     socket.onopen = () => {
         intentionallyClosed = false;          // 연결 성공 시 플래그 리셋
         reconnectDelay = RECONNECT_DELAY_MIN; // 재연결 성공 시 backoff 초기화
+
+        logMapWsDiag('open', { readyState: socket.readyState });
 
         let MsgWorkerOpen = new MsgWorker('ws:open');
         MsgWorkerOpen.meta({readyState: socket.readyState});
@@ -67,6 +95,15 @@ let connectSocket = uri => {
 
     // "WebSocket" close ----------------------------------------------------------------------
     socket.onclose = closeEvent => {
+        const willReconnect = !intentionallyClosed && wsUri !== null;
+        logMapWsDiag('close', {
+            code: closeEvent.code,
+            reason: closeEvent.reason || '',
+            wasClean: closeEvent.wasClean,
+            intentionallyClosed,
+            willReconnect
+        });
+
         let MsgWorkerClosed = new MsgWorker('ws:closed');
         MsgWorkerClosed.meta({
             readyState: WebSocket.CLOSED,
@@ -81,13 +118,16 @@ let connectSocket = uri => {
         // intentionallyClosed 플래그가 없으면 항상 재연결 시도.
         // close code(1000/1001)는 프록시·서버 재시작 시에도 올 수 있어
         // 플래그 기반 판단이 더 신뢰성이 높다.
-        if(!intentionallyClosed && wsUri !== null){
+        if(willReconnect){
             scheduleReconnect();
         }
     };
 
     // "WebSocket" error ----------------------------------------------------------------------
     socket.onerror = () => {
+        logMapWsDiag('error', {
+            readyState: socket ? socket.readyState : WebSocket.CLOSED
+        });
         let MsgWorkerError = new MsgWorker('ws:error');
         MsgWorkerError.meta({
             readyState: socket ? socket.readyState : WebSocket.CLOSED
@@ -239,6 +279,7 @@ self.addEventListener('connect', event => {   // jshint ignore:line
             case 'ws:close':
                 // 명시적 종료 — 이후 onclose에서 재연결하지 않는다
                 intentionallyClosed = true;
+                logMapWsDiag('intentional_close_requested', {});
                 if(reconnectTimer !== null){
                     clearTimeout(reconnectTimer);
                     reconnectTimer = null;

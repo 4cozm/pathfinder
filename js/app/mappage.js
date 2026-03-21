@@ -23,6 +23,25 @@ define([
         userUpdate: 0
     };
 
+    /** 맵 WS 진단 로그(페이지 콘솔) — SharedWorker 전용 콘솔과 별도 */
+    let mapWsDiagLastSubscriptionsLog = 0;
+    const MAP_WS_DIAG_SUBSCRIPTIONS_THROTTLE_MS = 90000;
+
+    let logMapWsPageDiag = (event, extra) => {
+        let host;
+        try {
+            host = new URL(MapWorker.getWebSocketURL()).host;
+        }catch(e){
+            host = undefined;
+        }
+        console.log('[PF][MapWS]', Object.assign({
+            ts: new Date().toISOString(),
+            event,
+            surface: 'page',
+            host: host || undefined
+        }, extra || {}));
+    };
+
     // client-side Ajax timeout and timeout-retry (abort = ignore)
     const AJAX_TIMEOUT_MS = 30000;
     const TIMEOUT_RETRY_MAX = 3;
@@ -229,6 +248,7 @@ define([
 
                     },
                     onOpen: (MsgWorkerMessage) => {
+                        logMapWsPageDiag('open', MsgWorkerMessage.meta() || {});
                         Util.setSyncStatus(MsgWorkerMessage.command, MsgWorkerMessage.meta());
                         MapWorker.send('subscribe', accessData.data);
 
@@ -246,6 +266,13 @@ define([
                                 ModuleMap.updateMapModule(mapModule);
                                 break;
                             case 'mapSubscriptions':
+                                {
+                                    let now = Date.now();
+                                    if(now - mapWsDiagLastSubscriptionsLog >= MAP_WS_DIAG_SUBSCRIPTIONS_THROTTLE_MS){
+                                        mapWsDiagLastSubscriptionsLog = now;
+                                        logMapWsPageDiag('mapSubscriptions', { note: 'throttled ~90s; confirms WS user-layer feed' });
+                                    }
+                                }
                                 Util.updateCurrentMapUserData(MsgWorkerMessage.data());
                                 ModuleMap.updateActiveMapUserData(mapModule);
                                 break;
@@ -264,11 +291,13 @@ define([
                         Util.setSyncStatus('ws:get');
                     },
                     onClosed: (MsgWorkerMessage) => {
+                        logMapWsPageDiag('close', Object.assign({ note: 'tab may lose sync until reconnect' }, MsgWorkerMessage.meta() || {}));
                         Util.setSyncStatus(MsgWorkerMessage.command, MsgWorkerMessage.meta());
                         reject(getPayload(MsgWorkerMessage.command));
 
                     },
                     onError: (MsgWorkerMessage) => {
+                        logMapWsPageDiag('error', MsgWorkerMessage.meta() || {});
                         Util.setSyncStatus(MsgWorkerMessage.command, MsgWorkerMessage.meta());
                         reject(getPayload(MsgWorkerMessage.command));
                     }
