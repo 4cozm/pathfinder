@@ -1563,7 +1563,7 @@ class Setup extends Controller {
      * @throws \Exception
      */
     protected function getSocketInformation(\Base $f3) : array {
-        $ttl = 0.6;
+        $ttl = 2.0;
         $task = 'healthCheck';
         $healthCheckToken = microtime(true);
 

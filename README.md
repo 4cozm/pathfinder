@@ -27,6 +27,7 @@ Issues should be reported in the [Issue](https://github.com/exodus4d/pathfinder/
 ### Map UI
 - **Wormhole memo toast:** When a system with wormhole statics is first drawn, its description (memo) is shown as a speech-bubble toast above the system head for 10 seconds.
 - **Map WebSocket diagnostics:** The browser **page console** (F12 → Console) logs lines prefixed with `[PF][MapWS]` when the map SharedWorker’s WebSocket opens, closes, errors, schedules reconnect, or (throttled) receives `mapSubscriptions`. The SharedWorker script logs the same prefix with additional detail (Chrome: DevTools → **Application** → **Shared workers** → select the map worker → Console). Use these logs when reporting map sync issues; they intentionally omit tokens and only include the WS host, codes, and timing.
+- **PHP → WebSocket TCP client:** The internal TCP socket used by PHP to talk to the `pathfinder-socket` server (`TcpSocket` / `$f3->webSocket()`) uses a default **2 second** connect/read timeout (`app/Lib/Config.php`). The Setup page TCP health check uses the same duration (`app/Controller/Setup.php`).
 
 ### Project structure
 <pre>
