@@ -238,6 +238,16 @@ define([
             }
         });
 
+        /** onOpen fires on first connect and every WS reconnect; resolve init promise only once */
+        let firstWsOpenResolved = false;
+
+        let finishFirstWsOpen = MsgWorkerMessage => {
+            if(!firstWsOpenResolved){
+                firstWsOpenResolved = true;
+                resolve(getPayload(MsgWorkerMessage.command));
+            }
+        };
+
         if(accessData && accessData.status === 'OK'){
             // init SharedWorker for maps
             MapWorker.init({
@@ -250,9 +260,25 @@ define([
                     onOpen: (MsgWorkerMessage) => {
                         logMapWsPageDiag('open', MsgWorkerMessage.meta() || {});
                         Util.setSyncStatus(MsgWorkerMessage.command, MsgWorkerMessage.meta());
-                        MapWorker.send('subscribe', accessData.data);
-
-                        resolve(getPayload(MsgWorkerMessage.command));
+                        // Fresh tokens + mapConnectionAccess on socket server (subscribe consumes one-time tokens)
+                        getMapAccessData().then(fresh => {
+                            if(fresh && fresh.status === 'OK'){
+                                MapWorker.send('subscribe', fresh.data);
+                                triggerMapUpdatePing(mapModule, true);
+                            }else{
+                                logMapWsPageDiag('access-data-invalid', { note: 'fallback to Ajax' });
+                                Util.setSyncStatus('ws:error', MsgWorkerMessage.meta());
+                                triggerMapUpdatePing(mapModule, true);
+                            }
+                            finishFirstWsOpen(MsgWorkerMessage);
+                        }).catch(err => {
+                            if(err && err.action === 'shutdown'){
+                                logMapWsPageDiag('access-data-failed', { note: 'getMapAccessData error; fallback to Ajax' });
+                                Util.setSyncStatus('ws:error', MsgWorkerMessage.meta());
+                                triggerMapUpdatePing(mapModule, true);
+                            }
+                            finishFirstWsOpen(MsgWorkerMessage);
+                        });
                     },
                     onGet: (MsgWorkerMessage) => {
                         switch(MsgWorkerMessage.task()){
