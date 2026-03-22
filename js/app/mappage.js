@@ -261,10 +261,19 @@ define([
                         logMapWsPageDiag('open', MsgWorkerMessage.meta() || {});
                         Util.setSyncStatus(MsgWorkerMessage.command, MsgWorkerMessage.meta());
                         // Fresh tokens + mapConnectionAccess on socket server (subscribe consumes one-time tokens)
+                        // [Race Condition 방지] PHP API → WS TCP 소켓을 통해 발급된 토큰이 WS 서버 메모리에
+                        // 완전히 등록되기 전에 브라우저가 subscribe를 먼저 보내는 실서버 경합을 방지하기 위해
+                        // subscribe 전송 전 300ms 마이크로 딜레이를 부여한다.
+                        // 로컬 도커에서는 내부망 지연이 0ms여서 문제가 없었으나, 실서버 프록시/LB 환경에서는
+                        // TCP 소켓 전달이 약간 늦어 클라이언트의 subscribe가 먼저 도달해 무효 토큰으로 처리됨.
+                        const WS_SUBSCRIBE_DELAY_MS = 300;
                         getMapAccessData().then(fresh => {
                             if(fresh && fresh.status === 'OK'){
-                                MapWorker.send('subscribe', fresh.data);
-                                triggerMapUpdatePing(mapModule, true);
+                                logMapWsPageDiag('subscribe-queued', { delayMs: WS_SUBSCRIBE_DELAY_MS, note: 'waiting for TCP token registration on WS server' });
+                                setTimeout(() => {
+                                    MapWorker.send('subscribe', fresh.data);
+                                    triggerMapUpdatePing(mapModule, true);
+                                }, WS_SUBSCRIBE_DELAY_MS);
                             }else{
                                 logMapWsPageDiag('access-data-invalid', { note: 'fallback to Ajax' });
                                 Util.setSyncStatus('ws:error', MsgWorkerMessage.meta());
