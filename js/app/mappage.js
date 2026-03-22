@@ -583,6 +583,12 @@ define([
                         ModuleMap.updateSystemModulesData(mapModule, data.system);
                     }
 
+                    // update map data (e.g. new systems added)
+                    if(data.mapData !== undefined){
+                        Util.setCurrentMapData(data.mapData);
+                        ModuleMap.updateMapModule(mapModule);
+                    }
+
                     // store current map user data (cache)
                     if(data.mapUserData !== undefined){
                         Util.setCurrentMapUserData(data.mapUserData);

@@ -588,9 +588,11 @@ class Map extends Controller\AccessController {
         }
 
         foreach($maps as $map){
+            $isMapIdChanged = in_array($map->_id, $mapIdsChanged);
             // format map Data for return/broadcast
-            if($mapData = $this->getFormattedMapData($map)){
-                if(in_array($map->_id, $mapIdsChanged)){
+            // -> if map was changed -> do NOT use cache!
+            if($mapData = $this->getFormattedMapData($map, $isMapIdChanged)){
+                if($isMapIdChanged){
                     $this->broadcastMapData($mapData);
                 }
 
@@ -687,6 +689,14 @@ class Map extends Controller\AccessController {
                         $f3->set($cacheKey, $mapUserData, $responseTTL);
                     }
                     $return->mapUserData[] = $mapUserData;
+                }
+
+                // mapData --------------------------------------------------------------------------------------------
+                // if map was tracked/changed -> add current map data as well
+                if($mapTracking){
+                    if($mapData = $this->getFormattedMapData($map)){
+                        $return->mapData[] = $mapData;
+                    }
                 }
 
                 // systemData -----------------------------------------------------------------------------------------
@@ -1027,7 +1037,9 @@ class Map extends Controller\AccessController {
         }
 
         if($mapDataChanged){
-            $this->broadcastMap($map);
+            // map data changed -> broadcast change to all map-subscribers
+            // -> use "noCache" to ensure latest data is broadcasted! 
+            $this->broadcastMap($map, true);
         }
 
         return $map;
@@ -1057,10 +1069,16 @@ class Map extends Controller\AccessController {
 
 
         // 1. client-location hint
+        // location.systemId = 클라이언트의 현재 위치(source) EVE systemId
+        // position = source 옆 빈 좌표 (새 시스템 배치 위치)
+        $locationSystemId = (int)($newSystemPositions['location']['systemId'] ?? 0);
+        $sourceSystemEveId = ($sourceSystem && $sourceExists) ? (int)$sourceSystem->systemId : 0;
+
         if (
             !empty($newSystemPositions['location']) &&
             isset($newSystemPositions['location']['systemId'], $newSystemPositions['location']['position']['x'], $newSystemPositions['location']['position']['y']) &&
-            (int)$newSystemPositions['location']['systemId'] === $targetSystemId
+            $locationSystemId > 0 &&
+            ($locationSystemId === $sourceSystemEveId || $locationSystemId === $targetSystemId)
         ) {
             return [
                 'x' => (int)$newSystemPositions['location']['position']['x'],
@@ -1161,7 +1179,7 @@ class Map extends Controller\AccessController {
         $posX = (int)($defaultPositions[0]['x'] ?? 0);
         $posY = (int)($defaultPositions[0]['y'] ?? 0);
 
-        if ($posX > 0 || $posY > 30) {
+        if ($posX > 0 || $posY >= 30) {
             // 기본 좌표(0,0 부근)도 겹칠 수 있으므로 빈 공간을 찾을 때까지 우측으로 이동
             $safetyCounter = 0;
             while (!$isPositionFree($posX, $posY) && $safetyCounter < 20) {
