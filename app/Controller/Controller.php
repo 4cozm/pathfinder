@@ -72,6 +72,31 @@ class Controller {
     }
 
     /**
+     * get Redis instance
+     * @return \Redis|null
+     */
+    protected function getRedis() : ?\Redis {
+        static $redis = null;
+        if(is_null($redis) && extension_loaded('redis')){
+            $redis = new \Redis();
+            try {
+                if(!$redis->pconnect(
+                    Config::getEnvironmentData('REDIS_HOST'),
+                    Config::getEnvironmentData('REDIS_PORT') ? : 6379,
+                    Config::REDIS_OPT_TIMEOUT
+                )){
+                    $redis = null;
+                } else if($auth = Config::getEnvironmentData('REDIS_AUTH')){
+                    $redis->auth($auth);
+                }
+            } catch (\Exception $e) {
+                $redis = null;
+            }
+        }
+        return $redis;
+    }
+
+    /**
      * get DB connection
      * @param string $alias
      * @return SQL|null
@@ -88,6 +113,11 @@ class Controller {
      * @return bool
      */
     function beforeroute(\Base $f3, $params) : bool {
+        // increment active worker count
+        if($redis = $this->getRedis()){
+            $redis->incr('PF_ACTIVE_WORKERS');
+        }
+
         // init user session
         $this->initSession($f3);
 
@@ -116,6 +146,11 @@ class Controller {
      * @param \Base $f3
      */
     public function afterroute(\Base $f3){
+        // decrement active worker count
+        if($redis = $this->getRedis()){
+            $redis->decr('PF_ACTIVE_WORKERS');
+        }
+
         // send preload/prefetch headers
         $resource = Resource::instance();
         if($resource->getOption('output') === 'header'){

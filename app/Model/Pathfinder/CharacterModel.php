@@ -914,6 +914,20 @@ class CharacterModel extends AbstractPathfinderModel {
             $this->logLocation &&
             $this->hasBasicScopes()
         ){
+            // Backpressure check: skip update if systemic pressure is high
+            // Deterministic sampling ensures fairness (same character consistently throttled in a window)
+            if(
+                \Exodus4D\Pathfinder\Lib\Api\BackpressureManager::instance()->shouldThrottle($this->_id) &&
+                ($characterLog = $this->getLog())
+            ){
+                // Even with backpressure, we allow updates if it's been a long time (e.g. 5 minutes)
+                // but if it was recent (within 60s), we skip to save ESI calls and workers
+                $now = new \DateTime();
+                $lastUpdate = new \DateTime($characterLog->updated);
+                if($now->getTimestamp() - $lastUpdate->getTimestamp() < 60){
+                    return $this;
+                }
+            }
             // Try to pull data from API
             if($accessToken = $this->getAccessToken()){
                 if($this->isOnline($accessToken)){

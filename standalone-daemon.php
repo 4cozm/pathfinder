@@ -4,6 +4,7 @@ namespace Exodus4D\Pathfinder;
 
 use Exodus4D\Pathfinder\Lib;
 use Exodus4D\Pathfinder\Cron\CharacterUpdate;
+use Exodus4D\Pathfinder\Lib\Api\BackpressureManager;
 
 session_name('pathfinder_session');
 
@@ -120,37 +121,58 @@ $interval = (int)($argv[1] ?? 10);
 $interval = max(5, $interval);
 
 $job = new CharacterUpdate();
+$lastJobRun = 0;
+$lastPressureUpdate = 0;
+
+error_log('[standalone-daemon] Starting loop with backpressure support');
 
 while (true) {
-    $tickStart = microtime(true);
-    $tickIso = date('c');
+    $now = time();
 
-    try {
-        $job->checkExpiredCombatAggregations($f3);
-        $stats = $job->updateStandaloneTrackedLogs($f3);
-
-        $tickMs = (int)round((microtime(true) - $tickStart) * 1000);
-        $memMb = (int)round(memory_get_usage(true) / 1024 / 1024);
-        $peakMb = (int)round(memory_get_peak_usage(true) / 1024 / 1024);
-
-        error_log(sprintf(
-            '[standalone-daemon][%s] tick=%dms files=%d chars=%d processed=%d updated=%d expiredFiles=%d errors=%d job=%dms mem=%dMB peak=%dMB dir=%s',
-            $tickIso,
-            $tickMs,
-            (int)($stats['files'] ?? -1),
-            (int)($stats['charsTotal'] ?? -1),
-            (int)($stats['charsProcessed'] ?? -1),
-            (int)($stats['updated'] ?? -1),
-            (int)($stats['expiredFiles'] ?? -1),
-            (int)($stats['errors'] ?? -1),
-            (int)($stats['elapsedMs'] ?? -1),
-            $memMb,
-            $peakMb,
-            (string)($stats['dir'] ?? '')
-        ));
-    } catch (\Throwable $e) {
-        error_log('[standalone-daemon][EXCEPTION] ' . $e->getMessage());
+    // 1. Update Backpressure Score every 2 seconds
+    if ($now - $lastPressureUpdate >= 2) {
+        try {
+            BackpressureManager::instance()->updatePressureScore();
+            $lastPressureUpdate = $now;
+        } catch (\Throwable $e) {
+            error_log('[standalone-daemon][Backpressure] update failed: ' . $e->getMessage());
+        }
     }
 
-    sleep($interval);
+    // 2. Run Main Job every $interval seconds
+    if ($now - $lastJobRun >= $interval) {
+        $tickStart = microtime(true);
+        $tickIso = date('c');
+
+        try {
+            $job->checkExpiredCombatAggregations($f3);
+            $stats = $job->updateStandaloneTrackedLogs($f3);
+
+            $tickMs = (int)round((microtime(true) - $tickStart) * 1000);
+            $memMb = (int)round(memory_get_usage(true) / 1024 / 1024);
+            $peakMb = (int)round(memory_get_peak_usage(true) / 1024 / 1024);
+
+            error_log(sprintf(
+                '[standalone-daemon][%s] tick=%dms files=%d chars=%d processed=%d updated=%d expiredFiles=%d errors=%d job=%dms mem=%dMB peak=%dMB',
+                $tickIso,
+                $tickMs,
+                (int)($stats['files'] ?? -1),
+                (int)($stats['charsTotal'] ?? -1),
+                (int)($stats['charsProcessed'] ?? -1),
+                (int)($stats['updated'] ?? -1),
+                (int)($stats['expiredFiles'] ?? -1),
+                (int)($stats['errors'] ?? -1),
+                (int)($stats['elapsedMs'] ?? -1),
+                $memMb,
+                $peakMb
+            ));
+            
+            $lastJobRun = $now;
+        } catch (\Throwable $e) {
+            error_log('[standalone-daemon][EXCEPTION] ' . $e->getMessage());
+        }
+    }
+
+    // High frequency sleep for multi-timer support
+    sleep(1);
 }
