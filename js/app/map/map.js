@@ -47,7 +47,14 @@ define([
         endpointTargetClass: 'pf-map-endpoint-target',
 
         // system security classes
-        systemSec: 'pf-system-sec'
+        systemSec: 'pf-system-sec',
+
+        // memo toast
+        memoToastClass: 'pf-system-memo-toast',
+        memoToastLayerClass: 'pf-map-toast-layer',
+        memoToastDurationMs: 10000,
+        memoToastRetryIntervalMs: 200,
+        memoToastRetryTimeoutMs: 3000
     };
 
     // active connections per map (cache object)
@@ -56,6 +63,10 @@ define([
     // mapIds that receive updates while they are "locked" (active timer)
     // -> those maps queue their updates until "pf:unlocked" event
     let mapUpdateQueue = [];
+
+    // cache to avoid duplicate memo toasts/retries for the same system revision
+    let memoToastShownCache = {};
+    let memoToastRetryCache = {};
 
 
     // map menu options
@@ -483,8 +494,7 @@ define([
                 'top': newPosY
             });
 
-            // show wormhole memo toast once on DOM creation
-            showSystemMemoToast(system, getSystemMemoText(data));
+            // memo toast is handled in drawSystem() after the system has been appended to the map
 
         }else{
             system = $(system);
@@ -1584,26 +1594,153 @@ define([
     };
 
     /**
+     * get stable cache key for a system memo toast
+     * @param systemData
+     * @returns {string}
+     */
+    let getSystemMemoToastCacheKey = systemData => {
+        let mapId = parseInt(Util.getObjVal(systemData, 'mapId')) || 0;
+        let systemId = parseInt(Util.getObjVal(systemData, 'id')) || 0;
+        let updated = parseInt(Util.getObjVal(systemData, 'updated.updated')) || 0;
+        return [mapId, systemId, updated].join('.');
+    };
+
+    /**
+     * get (or create) toast layer for a map container
+     * @param mapContainer
+     * @returns {jQuery}
+     */
+    let getMapToastLayer = mapContainer => {
+        let layer = mapContainer.find(`.${config.memoToastLayerClass}`);
+        if(!layer.length){
+            layer = $('<div>', {
+                class: config.memoToastLayerClass
+            });
+            mapContainer.append(layer);
+        }
+        return layer;
+    };
+
+    /**
      * show memo toast above a newly created wormhole system
+     * -> rendered in dedicated map layer (not inside .pf-system) to avoid clipping by parent overflow
+     * @param mapContainer
      * @param system
      * @param memoText
      */
-    let showSystemMemoToast = (system, memoText) => {
+    let showSystemMemoToast = (mapContainer, system, memoText, systemData = {}) => {
         if(memoText && memoText.length > 0){
+            let toastLayer = getMapToastLayer(mapContainer);
+            let systemWidth = system.outerWidth() || system[0].clientWidth || 0;
+            let dataLeft = parseFloat(Util.getObjVal(systemData, 'position.x'));
+            let dataTop = parseFloat(Util.getObjVal(systemData, 'position.y'));
+
+            let pos = system.position();
+            let leftCss = parseFloat(system.css('left')) || 0;
+            let topCss = parseFloat(system.css('top')) || 0;
+
+            // In some scrollbar/transform scenarios jQuery.position() may resolve to 0/0.
+            // Prefer data position first, then explicit CSS left/top, then jQuery.position.
+            let left = Number.isFinite(dataLeft) ? dataLeft : leftCss;
+            let top = Number.isFinite(dataTop) ? dataTop : topCss;
+            if(!(Number.isFinite(dataLeft) || Number.isFinite(dataTop))){
+                left = (pos && (pos.left || pos.left === 0)) ? pos.left : leftCss;
+                top = (pos && (pos.top || pos.top === 0)) ? pos.top : topCss;
+            }
+            if(!left && leftCss) left = leftCss;
+            if(!top && topCss) top = topCss;
+
             let toast = $('<div>', {
-                class: 'pf-system-memo-toast',
+                class: config.memoToastClass,
                 text: memoText
+            }).css({
+                left: (left + (systemWidth / 2)) + 'px',
+                top: (top) + 'px'
             });
 
-            system.find('.pf-system-memo-toast').remove();
-            system.append(toast);
+            toastLayer.find(`.${config.memoToastClass}`).remove();
+            toastLayer.append(toast);
 
             setTimeout(() => {
                 toast.fadeOut(500, function(){
                     $(this).remove();
                 });
-            }, 10000);
+            }, config.memoToastDurationMs);
         }
+    };
+
+    /**
+     * try to show memo toast with optional retry while system data is still incomplete
+     * @param map
+     * @param mapContainer
+     * @param system
+     * @param systemData
+     * @param options
+     */
+    let tryShowSystemMemoToast = (map, mapContainer, system, systemData, options = {}) => {
+        let showMemo = data => {
+            let cacheKey = getSystemMemoToastCacheKey(data);
+            let memoText = getSystemMemoText(data);
+
+            if(memoText && !memoToastShownCache[cacheKey]){
+                memoToastShownCache[cacheKey] = true;
+                showSystemMemoToast(mapContainer, system, memoText, data);
+                return true;
+            }
+
+            return false;
+        };
+
+        if(showMemo(systemData)){
+            return;
+        }
+
+        if(!options.retry){
+            return;
+        }
+
+        let mapId = parseInt(Util.getObjVal(systemData, 'mapId')) || parseInt(mapContainer.data('id')) || 0;
+        let systemId = parseInt(Util.getObjVal(systemData, 'id')) || 0;
+        if(!mapId || !systemId){
+            return;
+        }
+
+        let retryKey = [mapId, systemId].join('.');
+        if(memoToastRetryCache[retryKey]){
+            return;
+        }
+
+        let started = Date.now();
+        let run = () => {
+            // stop retry if system no longer exists (e.g. deleted quickly)
+            if(!system.closest('.' + Util.config.mapClass).length){
+                delete memoToastRetryCache[retryKey];
+                return;
+            }
+
+            Util.request('GET', 'System', systemId, {
+                mapId: mapId
+            }, {}).then(payload => {
+                if(showMemo(payload.data)){
+                    delete memoToastRetryCache[retryKey];
+                    return;
+                }
+
+                if(Date.now() - started < config.memoToastRetryTimeoutMs){
+                    memoToastRetryCache[retryKey] = setTimeout(run, config.memoToastRetryIntervalMs);
+                }else{
+                    delete memoToastRetryCache[retryKey];
+                }
+            }, () => {
+                if(Date.now() - started < config.memoToastRetryTimeoutMs){
+                    memoToastRetryCache[retryKey] = setTimeout(run, config.memoToastRetryIntervalMs);
+                }else{
+                    delete memoToastRetryCache[retryKey];
+                }
+            });
+        };
+
+        memoToastRetryCache[retryKey] = setTimeout(run, config.memoToastRetryIntervalMs);
     };
 
     /**
@@ -1663,6 +1800,11 @@ define([
 
             let mapContainer = $(map.getContainer());
 
+            // detect whether this is a brand new system element
+            let mapId = parseInt(mapContainer.data('id')) || 0;
+            let systemDomId = MapUtil.getSystemId(mapId, systemData.id);
+            let isNewSystem = !document.getElementById(systemDomId);
+
             // get System Element by data
             let newSystem = mapContainer.getSystem(map, systemData);
 
@@ -1688,9 +1830,16 @@ define([
                 system: newSystem
             };
 
-            // keep generic notification for non-wormhole systems
-            // (wormholes use the dedicated memo toast on initial DOM creation)
-            if(!getSystemMemoText(systemData)){
+            // memo toast for new systems:
+            // show immediately if memo data is ready; otherwise retry shortly until data arrives.
+            if(isNewSystem){
+                tryShowSystemMemoToast(map, mapContainer, newSystem, systemData, {
+                    retry: true
+                });
+            }
+
+            // keep generic notification for non-wormhole systems only
+            if(!(Array.isArray(systemData.statics) && systemData.statics.length > 0)){
                 showSystemNotification(newSystem, systemData.description);
             }
 
