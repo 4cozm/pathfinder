@@ -940,6 +940,15 @@ class CharacterModel extends AbstractPathfinderModel {
                         if(!$characterLog = $this->getLog()){
                             // create new log
                             $characterLog = $this->rel('characterLog');
+
+                            // Double check DB (direct hit) to avoid race conditions (Unique constraint violation)
+                            // if getLog() (which uses cache) has a cache miss
+                            $characterLog->load(['characterId = ?', $this->_id]);
+
+                            if($characterLog->dry()){
+                                // truly no log found -> reset to clean state for new insert
+                                $characterLog->reset();
+                            }
                         }
 
                         // get current log data and modify on change

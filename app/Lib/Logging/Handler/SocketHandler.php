@@ -55,7 +55,12 @@ class SocketHandler extends \Monolog\Handler\SocketHandler {
 
         $record['formatted'] = $this->getFormatter()->format($record);
 
-        $this->write($record);
+        try {
+            $this->write($record);
+        } catch (\RuntimeException $e) {
+            // catch Monolog write errors (e.g. timeout) to avoid PHP Fatal 
+            return false === $this->bubble;
+        }
 
         return false === $this->bubble;
     }
