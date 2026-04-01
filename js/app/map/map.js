@@ -54,7 +54,7 @@ define([
         memoToastLayerClass: 'pf-map-toast-layer',
         memoToastDurationMs: 10000,
         memoToastRetryIntervalMs: 200,
-        memoToastRetryTimeoutMs: 3000
+        memoToastRetryTimeoutMs: 10000
     };
 
     // active connections per map (cache object)
