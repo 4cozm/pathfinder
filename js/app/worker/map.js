@@ -61,6 +61,9 @@ let scheduleReconnect = () => {
 // init "WebSocket" connection ========================================================================================
 let connectSocket = uri => {
     logMapWsDiag('connect_attempt', { host: mapWsHostFromUri(uri) });
+    // #region agent log
+    fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H1',location:'worker/map.js:connect_attempt',message:'Map worker connect attempt',data:{host:mapWsHostFromUri(uri)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     socket = new WebSocket(uri);
 
     // "WebSocket" open -----------------------------------------------------------------------
@@ -103,6 +106,9 @@ let connectSocket = uri => {
             intentionallyClosed,
             willReconnect
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H1',location:'worker/map.js:onclose',message:'Map worker websocket closed',data:{code:closeEvent.code,reason:closeEvent.reason || null,wasClean:closeEvent.wasClean,intentionallyClosed:intentionallyClosed,willReconnect:willReconnect,host:mapWsHostFromUri(wsUri)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
 
         let MsgWorkerClosed = new MsgWorker('ws:closed');
         MsgWorkerClosed.meta({
@@ -128,6 +134,9 @@ let connectSocket = uri => {
         logMapWsDiag('error', {
             readyState: socket ? socket.readyState : WebSocket.CLOSED
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H1',location:'worker/map.js:onerror',message:'Map worker websocket error',data:{readyState:socket ? socket.readyState : WebSocket.CLOSED,host:mapWsHostFromUri(wsUri)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         let MsgWorkerError = new MsgWorker('ws:error');
         MsgWorkerError.meta({
             readyState: socket ? socket.readyState : WebSocket.CLOSED

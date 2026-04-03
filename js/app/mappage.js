@@ -169,8 +169,14 @@ define([
      */
     let getMapAccessData = () => new Promise((resolve, reject) => {
         $.getJSON(Init.path.getAccessData).done(accessData => {
+            // #region agent log
+            fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H2',location:'mappage.js:getMapAccessData.done',message:'getAccessData success',data:{status:accessData && accessData.status ? accessData.status : null,hasData:!!(accessData && accessData.data),mapCount:accessData && accessData.data && accessData.data.mapData ? accessData.data.mapData.length : null},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             resolve(accessData);
         }).fail((jqXHR, status, error) => {
+            // #region agent log
+            fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H2',location:'mappage.js:getMapAccessData.fail',message:'getAccessData failed',data:{url:Init.path.getAccessData,httpStatus:jqXHR ? jqXHR.status : null,textStatus:status || null,error:error || null},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             reject({
                 action: 'shutdown',
                 data: {
@@ -260,6 +266,9 @@ define([
                     onOpen: (MsgWorkerMessage) => {
                         logMapWsPageDiag('open', MsgWorkerMessage.meta() || {});
                         Util.setSyncStatus(MsgWorkerMessage.command, MsgWorkerMessage.meta());
+                        // #region agent log
+                        fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H1',location:'mappage.js:initMapWorker.onOpen',message:'Map WS opened on page',data:{command:MsgWorkerMessage.command,meta:MsgWorkerMessage.meta ? MsgWorkerMessage.meta() : null},timestamp:Date.now()})}).catch(()=>{});
+                        // #endregion
                         // Fresh tokens + mapConnectionAccess on socket server (subscribe consumes one-time tokens)
                         // [Race Condition 방지] PHP API → WS TCP 소켓을 통해 발급된 토큰이 WS 서버 메모리에
                         // 완전히 등록되기 전에 브라우저가 subscribe를 먼저 보내는 실서버 경합을 방지하기 위해
@@ -270,6 +279,9 @@ define([
                         getMapAccessData().then(fresh => {
                             if(fresh && fresh.status === 'OK'){
                                 logMapWsPageDiag('subscribe-queued', { delayMs: WS_SUBSCRIBE_DELAY_MS, note: 'waiting for TCP token registration on WS server' });
+                                // #region agent log
+                                fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H3',location:'mappage.js:initMapWorker.subscribeQueued',message:'Subscribe queued after fresh accessData',data:{delayMs:WS_SUBSCRIBE_DELAY_MS,charId:fresh && fresh.data ? fresh.data.id : null,mapCount:fresh && fresh.data && fresh.data.mapData ? fresh.data.mapData.length : null},timestamp:Date.now()})}).catch(()=>{});
+                                // #endregion
                                 setTimeout(() => {
                                     MapWorker.send('subscribe', fresh.data);
                                     triggerMapUpdatePing(mapModule, true);
@@ -650,6 +662,9 @@ define([
      * @param error
      */
     let handleAjaxErrorResponse = (jqXHR, status, error) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7769/ingest/7d8aed94-a257-4347-a628-ee32df3e6718',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c1d0c4'},body:JSON.stringify({sessionId:'c1d0c4',runId:'pre-fix',hypothesisId:'H4',location:'mappage.js:handleAjaxErrorResponse',message:'Main map ajax error handler invoked',data:{httpStatus:jqXHR ? jqXHR.status : null,textStatus:status || null,error:error || null,url:jqXHR && jqXHR.url ? jqXHR.url : null},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         // clear both main update request trigger timer
         clearUpdateTimeouts();
 
