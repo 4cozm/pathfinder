@@ -22,10 +22,10 @@ class Route extends AbstractRestController {
     const ROUTE_SEARCH_DEPTH_DEFAULT = 1;
 
     /**
-     * ESI route search can handle max 100 custom connections
-     * -> each connection has a A->B and B->A entry. So we have 50 "real connections"
+     * ESI route search can handle max 200 custom connections
+     * -> each connection has a A->B and B->A entry. So we have 100 "real connections"
      */
-    const MAX_CONNECTION_COUNT  = 100;
+    const MAX_CONNECTION_COUNT  = 200;
 
     /**
      * cache time for static jump data (e.g. K-Space stargates)
