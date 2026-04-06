@@ -5,6 +5,7 @@ namespace Exodus4D\Pathfinder\Controller\Api\Rest;
 
 
 use Exodus4D\Pathfinder\Lib\Config;
+use Exodus4D\Pathfinder\Lib\Api\EsiRouteStatusAdapter;
 use Exodus4D\Pathfinder\Controller\Ccp\Universe;
 use Exodus4D\Pathfinder\Model\Pathfinder;
 
@@ -673,13 +674,20 @@ class Route extends AbstractRestController {
                 }
             }
 
+            // validate connections ----------------------------------------------------------------------------------
+            $connections = array_map(function($pair) {
+                return array_map('intval', (array)$pair);
+            }, (array)$connections);
+            $connections = array_values(array_unique($connections, SORT_REGULAR));
+
             // search route -------------------------------------------------------------------------------------------
             $options = [
                 'flag' => $filterData['flag'],
                 'connections' => $connections
             ];
 
-            $result = $this->getF3()->ccpClient()->send('getRoute', $systemFromId, $systemToId, $options);
+            $esiAdapter = new EsiRouteStatusAdapter($this->getUserAgent());
+            $result = $esiAdapter->getRoute($systemFromId, $systemToId, $options);
 
             // format result ------------------------------------------------------------------------------------------
 

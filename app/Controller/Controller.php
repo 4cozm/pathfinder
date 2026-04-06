@@ -12,6 +12,7 @@ namespace Exodus4D\Pathfinder\Controller;
 use Exodus4D\Pathfinder\Controller\Api as Api;
 use Exodus4D\Pathfinder\Lib\Api\CcpClient;
 use Exodus4D\Pathfinder\Lib\Config;
+use Exodus4D\Pathfinder\Lib\Api\EsiRouteStatusAdapter;
 use Exodus4D\Pathfinder\Lib\Db\Sql;
 use Exodus4D\Pathfinder\Lib\Resource;
 use Exodus4D\Pathfinder\Lib\Monolog;
@@ -635,7 +636,8 @@ class Controller {
                     $return->error[] = (new PathfinderException($serverStatus['error'], 500))->getError();
                 }
 
-                $apiStatus = $client->send('getStatus', 'latest', true);
+                $esiAdapter = new EsiRouteStatusAdapter($this->getUserAgent());
+                $apiStatus = $esiAdapter->getStatus();
                 if( !isset($apiStatus['error']) ){
                     // find top status
                     $status = 'OK';
