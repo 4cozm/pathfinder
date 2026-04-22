@@ -778,7 +778,7 @@ class CharacterModel extends AbstractPathfinderModel {
         // check config files for hardcoded character roles
         if(self::getF3()->exists('PATHFINDER.ROLES.CHARACTER', $globalAdminData)){
             foreach((array)$globalAdminData as $adminData){
-                if($adminData['ID'] === $this->_id){
+                if((int)$adminData['ID'] === (int)$this->_id){
                     switch($adminData['ROLE']){
                         case 'SUPER':
                             $role = RoleModel::getAdminRole();
