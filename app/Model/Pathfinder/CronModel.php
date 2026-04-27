@@ -102,8 +102,63 @@ class CronModel extends AbstractPathfinderModel {
         'lastExecState' => [
             'type' => self::DT_JSON
         ],
+        'avgCpuTime' => [
+            'type' => Schema::DT_FLOAT,
+            'nullable' => true,
+            'default' => null
+        ],
+        'maxCpuTime' => [
+            'type' => Schema::DT_FLOAT,
+            'nullable' => true,
+            'default' => null
+        ],
+        'avgExecDuration' => [
+            'type' => Schema::DT_FLOAT,
+            'nullable' => true,
+            'default' => null
+        ],
+        'maxExecDuration' => [
+            'type' => Schema::DT_FLOAT,
+            'nullable' => true,
+            'default' => null
+        ],
+        'maxMemPeak' => [
+            'type' => Schema::DT_INT,
+            'nullable' => true,
+            'default' => null
+        ],
+        'execCount' => [
+            'type' => Schema::DT_INT,
+            'nullable' => false,
+            'default' => 0
+        ],
+        'failCount' => [
+            'type' => Schema::DT_INT,
+            'nullable' => false,
+            'default' => 0
+        ],
+        'lastFailReset' => [
+            'type' => Schema::DT_DOUBLE,
+            'nullable' => true,
+            'default' => null
+        ],
+        'lastAlertCpu' => [
+            'type' => Schema::DT_DOUBLE,
+            'nullable' => true,
+            'default' => null
+        ],
+        'lastAlertMem' => [
+            'type' => Schema::DT_DOUBLE,
+            'nullable' => true,
+            'default' => null
+        ],
+        'lastAlertFail' => [
+            'type' => Schema::DT_DOUBLE,
+            'nullable' => true,
+            'default' => null
+        ],
         'history' => [
-            'type' => self::DT_JSON
+            'has-many' => ['Exodus4D\Pathfinder\Model\Pathfinder\CronHistoryModel', 'cronId']
         ]
     ];
 
@@ -112,7 +167,10 @@ class CronModel extends AbstractPathfinderModel {
      * @param array $data
      */
     public function setData(array $data){
-        $this->copyfrom($data, ['handler', 'expr', 'lastExecStart', 'lastExecEnd', 'lastExecMemPeak', 'lastExecState']);
+        $this->copyfrom($data, [
+            'handler', 'expr', 'lastExecStart', 'lastExecEnd', 'lastExecMemPeak', 'lastExecState',
+            'avgCpuTime', 'maxCpuTime', 'avgExecDuration', 'maxExecDuration', 'maxMemPeak', 'execCount', 'failCount', 'lastFailReset', 'lastAlertCpu', 'lastAlertMem', 'lastAlertFail'
+        ]);
     }
 
     /**
@@ -132,10 +190,59 @@ class CronModel extends AbstractPathfinderModel {
         $data->lastExecMemPeak  = $this->lastExecMemPeak;
         $data->lastExecDuration = $this->getExecDuration();
         $data->lastExecState    = $this->lastExecState;
+        
+        $data->avgCpuTime       = $this->avgCpuTime;
+        $data->maxCpuTime       = $this->maxCpuTime;
+        $data->avgExecDuration  = $this->avgExecDuration;
+        $data->maxExecDuration  = $this->maxExecDuration;
+        $data->maxMemPeak       = $this->maxMemPeak;
+        $data->execCount        = $this->execCount;
+        $data->failCount        = $this->failCount;
+        $data->lastFailReset    = $this->lastFailReset;
+        $data->lastAlertCpu     = $this->lastAlertCpu;
+        $data->lastAlertMem     = $this->lastAlertMem;
+        $data->lastAlertFail    = $this->lastAlertFail;
 
         $data->isPaused         = $this->isPaused;
         $data->status           = $this->getStatus();
-        $data->history          = $this->getHistory(true);
+        
+        $historyData            = $this->getHistory(true);
+        $data->history          = $historyData;
+
+        // P50, P95 Calculation
+        $data->p50Duration = null;
+        $data->p95Duration = null;
+        $data->p50CpuTime = null;
+        $data->p95CpuTime = null;
+
+        if (!empty($historyData)) {
+            $durations = [];
+            $cpuTimes = [];
+            foreach ($historyData as $h) {
+                if (isset($h['lastExecDuration'])) $durations[] = (float)$h['lastExecDuration'];
+                if (isset($h['cpuTime'])) $cpuTimes[] = (float)$h['cpuTime'];
+                if (isset($h['ioTime'])) $ioTimes[] = (float)$h['ioTime'];
+            }
+
+            if (!empty($durations)) {
+                sort($durations);
+                $count = count($durations);
+                $data->p50Duration = $durations[(int)floor($count * 0.50)];
+                $data->p95Duration = $durations[(int)floor($count * 0.95)];
+            }
+            if (!empty($cpuTimes)) {
+                sort($cpuTimes);
+                $count = count($cpuTimes);
+                $data->p50CpuTime = $cpuTimes[(int)floor($count * 0.50)];
+                $data->p95CpuTime = $cpuTimes[(int)floor($count * 0.95)];
+            }
+            if (!empty($ioTimes)) {
+                sort($ioTimes);
+                $count = count($ioTimes);
+                $data->p50IoTime = $ioTimes[(int)floor($count * 0.50)];
+                $data->p95IoTime = $ioTimes[(int)floor($count * 0.95)];
+            }
+        }
 
         return $data;
     }
@@ -154,7 +261,6 @@ class CronModel extends AbstractPathfinderModel {
      * log execution "state" for prev run in 'history' column
      */
     protected function logState(){
-        $this->history = $this->getHistory() ? : null;
         // reset data from last run
         $this->lastExecEnd = null;
         $this->lastExecMemPeak = null;
@@ -166,19 +272,29 @@ class CronModel extends AbstractPathfinderModel {
      * @throws \Exception
      */
     protected function getHistory(bool $addLastIfFinished = false) : array {
-        $history = $this->history ? : [];
-
-        if(!is_null($this->lastExecStart)){
-            if(!$addLastIfFinished || !is_null($this->lastExecEnd)){
-                array_unshift($history, [
-                    'lastExecStart' => $this->lastExecStart,
-                    'lastExecMemPeak' => $this->lastExecMemPeak,
-                    'lastExecDuration' => (!$this->inExec() && !$this->isTimedOut()) ? $this->getExecDuration() : 0,
-                    'status' => array_intersect(array_keys($this->getStatus()), ['inProgress', 'notFinished'])
-                ]);
-                $history = array_slice($history, 0, 10);
+        $history = [];
+        $historyModel = new CronHistoryModel();
+        $records = $historyModel->find(
+            ['cronId = ?', $this->_id],
+            ['order' => 'created DESC', 'limit' => 100]
+        );
+        if($records){
+            foreach($records as $record){
+                $history[] = [
+                    'lastExecDuration' => $record->lastExecDuration,
+                    'cpuTime' => $record->cpuTime,
+                    'ioTime' => $record->ioTime,
+                    'lastExecMemPeak' => $record->lastExecMemPeak,
+                    'created' => clone $record->created
+                ];
             }
+        }
 
+        if($addLastIfFinished && $this->inExec() && !$this->isTimedOut()){
+            array_unshift($history, [
+                'lastExecStart' => $this->lastExecStart,
+                'status' => array_intersect(array_keys($this->getStatus()), ['inProgress', 'notFinished'])
+            ]);
         }
 
         return $history;
