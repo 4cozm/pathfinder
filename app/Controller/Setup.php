@@ -93,6 +93,11 @@ class Setup extends Controller {
                 'Model\Pathfinder\CharacterAuthenticationModel',
                 'Model\Pathfinder\CharacterLogModel',
 
+                // ACL (corp_acl / character_acl) — character/corporation/character_right 테이블 생성 이후 setup 되어야
+                // 일회성 시드·마이그레이션이 정상 동작한다. (docs/CORP_ACL_DESIGN.md)
+                'Model\Pathfinder\CorpAclModel',
+                'Model\Pathfinder\CharacterAclModel',
+
                 'Model\Pathfinder\SystemModel',
 
                 'Model\Pathfinder\ConnectionModel',

@@ -20,6 +20,8 @@ use Exodus4D\Pathfinder\Model\Pathfinder\CorporationModel;
 use Exodus4D\Pathfinder\Model\Pathfinder\MapModel;
 use Exodus4D\Pathfinder\Model\Pathfinder\RoleModel;
 use Exodus4D\Pathfinder\Model\Pathfinder\CharacterRightModel;
+use Exodus4D\Pathfinder\Model\Pathfinder\CorpAclModel;
+use Exodus4D\Pathfinder\Model\Pathfinder\CharacterAclModel;
 
 class Admin extends Controller{
 
@@ -139,43 +141,49 @@ class Admin extends Controller{
 
             switch($parts[0]){
                 case 'settings':
-                    // settings 페이지 및 API는 SUPER(admin)만 접근 가능
-                    if ($character->roleId->name !== 'SUPER') {
+                    // settings(ACL) 페이지: SUPER는 전체 수정, CORPORATION(매니저)은 읽기 전용
+                    if(!in_array($character->roleId->name, ['SUPER', 'CORPORATION'], true)){
                         $f3->reroute('@admin(@*=/)');
                         return;
                     }
-                    switch($parts[1]){
-                        case 'save':
-                            $objectId = (int)$parts[2];
-                            $values  = array_merge((array)$f3->get('GET'), (array)$f3->get('POST'));
-                            $this->saveSettings($character, $objectId, $values);
+                    $isSuper = ($character->roleId->name === 'SUPER');
 
-                            $f3->reroute('@admin(@*=/' . $parts[0] . ')');
-                            break;
-                        case 'savepersonal':
-                            $objectId = (int)$parts[2];
-                            // [AI NOTE] IMPORTANT: Always use POST + array_merge for settings forms.
-                            // GET queries from HTML forms might be stripped by the server/proxy (e.g. Traefik).
-                            $values  = array_merge((array)$f3->get('GET'), (array)$f3->get('POST'));
+                    // 변경 동작(corp/character)은 SUPER만 허용
+                    if(isset($parts[1]) && in_array($parts[1], ['corp', 'character'], true)){
+                        if(!$isSuper){
+                            $f3->reroute('@admin(@*=/settings)');
+                            return;
+                        }
 
-                            // [DEBUG LOG]
-                            error_log(sprintf('--- Admin::savePersonal --- Character: %s, ObjectId: %d, Method: %s', $character->name, $objectId, $f3->get('VERB')));
-                            error_log('Values: ' . print_r($values, true));
+                        $action   = $parts[2] ?? '';
+                        $objectId = (int)($parts[3] ?? 0);
 
-                            $this->savePersonalSettings($character, $objectId, $values);
+                        // corp 검색(info)은 JSON 반환 후 즉시 종료
+                        if($parts[1] === 'corp' && $action === 'info'){
+                            $this->getCorporationInfo($f3, $objectId);
+                            return;
+                        }
 
-                            $f3->reroute('@admin(@*=/' . $parts[0] . ')');
-                            break;
+                        // [AI NOTE] HTML form 은 항상 POST + array_merge. GET 은 프록시(Traefik)에서 유실될 수 있음.
+                        $values = array_merge((array)$f3->get('GET'), (array)$f3->get('POST'));
 
-                        case 'removepersonal':
-                            $objectId = (int)$parts[2];
-                            $this->removePersonalSettings($character, $objectId);
+                        if($parts[1] === 'corp'){
+                            switch($action){
+                                case 'save':   $this->saveCorpAcl($character, $objectId, $values); break;
+                                case 'remove': $this->removeCorpAcl($character, $objectId); break;
+                            }
+                        }else{ // character
+                            switch($action){
+                                case 'save':   $this->saveCharacterAcl($character, $objectId, $values); break;
+                                case 'remove': $this->removeCharacterAcl($character, $objectId); break;
+                            }
+                        }
 
-                            $f3->reroute('@admin(@*=/' . $parts[0] . ')');
-                            break;
+                        $f3->reroute('@admin(@*=/settings)');
+                        break;
                     }
-                    $f3->set('tplDefaultRole', RoleModel::getDefaultRole());
-                    $f3->set('tplRoles', RoleModel::getAll());
+
+                    $f3->set('tplIsSuper', $isSuper);
                     $this->initSettings($f3, $character);
                     break;
                 case 'members':
@@ -252,177 +260,119 @@ class Admin extends Controller{
     }
 
     /**
-     * save or delete settings (e.g. corporation rights)
-     * @param CharacterModel $character
+     * 만료 입력값(절대 시각 문자열)을 검증·정규화한다.
+     * - 빈 값 → null (무제한)
+     * - 과거 시각 → now 로 클램프(= 즉시 만료). 시계 오차로 살짝 과거인 경우도 동일.
+     * - 파싱 실패 → null (안전하게 무제한 취급)
+     * @param mixed $value
+     * @return string|null  'Y-m-d H:i:s' 또는 null
+     */
+    protected function parseExpires($value) : ?string {
+        $value = trim((string)$value);
+        if($value === ''){
+            return null; // 무제한
+        }
+        try{
+            $timezone = self::getF3()->get('getTimeZone')();
+            $dt  = new \DateTime($value, $timezone);
+            $now = new \DateTime('now', $timezone);
+            if($dt->getTimestamp() < $now->getTimestamp()){
+                $dt = $now; // 과거 → 즉시 만료
+            }
+            return $dt->format('Y-m-d H:i:s');
+        }catch(\Exception $e){
+            return null;
+        }
+    }
+
+    /**
+     * corp_acl upsert (로그인/편집/만료). 행 없으면 생성.
+     * @param CharacterModel $adminCharacter
      * @param int $corporationId
-     * @param array $settings
+     * @param array $settings  canLogin, canEdit, expires(절대 시각)
      * @throws \Exception
      */
-    protected function saveSettings(CharacterModel $character, int $corporationId, array $settings){
-        $defaultRole = RoleModel::getDefaultRole();
+    protected function saveCorpAcl(CharacterModel $adminCharacter, int $corporationId, array $settings){
+        if($corporationId <= 0){
+            return;
+        }
+        $acl = CorpAclModel::getByCorporationId($corporationId);
+        if(!$acl){
+            $acl = CorpAclModel::getNew('CorpAclModel');
+            $acl->corporationId = $corporationId;
+        }
+        $acl->canLogin  = !empty($settings['canLogin']) ? 1 : 0;
+        $acl->canEdit   = !empty($settings['canEdit']) ? 1 : 0;
+        $acl->expires   = $this->parseExpires($settings['expires'] ?? '');
+        $acl->updatedBy = (int)$adminCharacter->_id;
+        $acl->save();
+    }
 
-        if($corporationId && $defaultRole){
-            $corporations = $this->getAccessibleCorporations($character);
-            foreach($corporations as $corporation){
-                if((int)$corporation->id === $corporationId){
-                    // character has access to that corporation -> create/update/delete rights...
-                    if($corporationRightsData = (array)$settings['rights']){
-                        // get existing corp rights
-                        foreach($corporation->getRights($corporation::RIGHTS, ['addInactive' => true]) as $corporationRight){
-                            $corporationRightData = $corporationRightsData[$corporationRight->rightId->_id];
-                            if(
-                                $corporationRightData &&
-                                $corporationRightData['roleId'] != $defaultRole->_id // default roles should not be saved
-                            ){
-                                $corporationRight->setData($corporationRightData);
-                                $corporationRight->setActive(true);
-                                $corporationRight->save();
-                            }else{
-                                // right not send by user -> delete existing right
-                                $corporationRight->erase();
-                            }
-                        }
-                    }
-                    break;
-                }
-            }
+    /**
+     * corp_acl 하드 제거 (목록에서 완전히 삭제). A안에서는 ini 재시드가 없으므로 부활하지 않는다.
+     * @param CharacterModel $adminCharacter
+     * @param int $corporationId
+     * @throws \Exception
+     */
+    protected function removeCorpAcl(CharacterModel $adminCharacter, int $corporationId){
+        if($acl = CorpAclModel::getByCorporationId($corporationId)){
+            $acl->erase();
         }
     }
 
     /**
-     * save personal character map rights
-     * @param CharacterModel $adminCharacter  currently logged-in admin
-     * @param int            $targetCharacterId  character whose rights are being saved
-     * @param array          $settings  GET parameters (rights[rightId][active] = 1|0, init = 1)
-     * @throws \Exception
-     */
-    protected function savePersonalSettings(CharacterModel $adminCharacter, int $targetCharacterId, array $settings){
-        if(!$targetCharacterId) return;
-
-        /** @var CharacterModel $targetCharacter */
-        $targetCharacter = CharacterModel::getNew('CharacterModel');
-        // id 컬럼으로 캐릭터 로드
-        $targetCharacter->load(['id = ?', $targetCharacterId]);
-        
-        if(!$targetCharacter->valid()){
-            // DB에 없는 캐릭터인 경우 (한 번도 접속 안 함) -> ESI에서 정보 가져와 강제 생성
-            $sso = new Sso();
-            try {
-                $charData = $sso->getCharacterData($targetCharacterId);
-                if(!empty($charData->character)){
-                    $targetCharacter->id = (int)$charData->character['id'];
-                    $targetCharacter->name = $charData->character['name'];
-                    // 기본 역할 설정 (MEMBER)
-                    $targetCharacter->roleId = RoleModel::getDefaultRole();
-                    $targetCharacter->active = 1;
-                    
-                    // 군단/연맹 정보 업데이트 (있을 경우)
-                    if($charData->corporation){
-                        $targetCharacter->corporationId = (int)$charData->corporation->id;
-                    }
-                    if($charData->alliance){
-                        $targetCharacter->allianceId = (int)$charData->alliance->id;
-                    }
-
-                    $targetCharacter->save();
-                }
-            } catch (\Throwable $e) {
-                // ignore — character could not be created from ESI
-            }
-        }
-
-        if($targetCharacter->valid() && !$targetCharacter->active){
-            // 기존에 active=0으로 생성된 캐릭터가 있다면 이를 활성화 (SSO 로그인 충돌 방지)
-            $targetCharacter->setActive(true);
-            $targetCharacter->save();
-        }
-
-        if(!$targetCharacter->valid()){
-            return;
-        }
-
-        // --- NEW: Save Memo ---
-        $logger = self::getLogger('ADMIN');
-        $logger->write(sprintf('savePersonalSettings called for char=%s, memo_isset=%d, memo_val=%s', $targetCharacterId, isset($settings['memo']), $settings['memo'] ?? 'null'));
-
-        if(isset($settings['memo'])){
-            $targetCharacter->adminMemo = trim($settings['memo']);
-            $targetCharacter->save();
-            $logger->write(sprintf('saved memo: %s', $targetCharacter->adminMemo));
-        }
-        // -----------------------
-
-        $isInit = !empty($settings['init']);
-        $personalRightsData = (array)($settings['rights'] ?? []);
-
-        // 모든 사용 가능한 Right 목록을 직접 조회
-        /** @var \Exodus4D\Pathfinder\Model\Pathfinder\RightModel $rightModel */
-        $rightModel = CharacterModel::getNew('RightModel');
-        $allRights = $rightModel->find(['active = ? AND name IN (?)', 1, CorporationModel::RIGHTS]);
-        if(!$allRights){
-            return;
-        }
-
-        foreach($allRights as $tempRight){
-            $rightId = (int)$tempRight->_id;
-
-            // 해당 캐릭터+권한 조합의 기존 레코드를 직접 load (getRights() 우회)
-            /** @var \Exodus4D\Pathfinder\Model\Pathfinder\CharacterRightModel $cr */
-            $cr = CharacterModel::getNew('CharacterRightModel');
-            // characterId 필드는 CharacterModel의 _id와 매핑됨
-            $cr->load(['characterId = ? AND rightId = ?', $targetCharacter->id, $rightId]);
-
-            if($isInit){
-                // 최초 추가: DB에 없으면 active=0으로 신규 생성
-                if($cr->dry()){
-                    $cr->characterId = $targetCharacter->id;
-                    $cr->rightId     = $rightId;
-                    $cr->setActive(false);
-                    $cr->save();
-                }
-            }else{
-                // 체크박스 저장: 체크된 것은 active=1 upsert, 그 외는 erase
-                $isActive = isset($personalRightsData[$rightId])
-                    && (int)($personalRightsData[$rightId]['active'] ?? 0) === 1;
-
-                if($isActive){
-                    // 기존 레코드 없으면 새로 생성, 있으면 update
-                    if($cr->dry()){
-                         $cr->characterId = $targetCharacter->id;
-                         $cr->rightId     = $rightId;
-                    }
-                    $cr->setActive(true);
-                    $cr->save();
-                }else{
-                    // 체크 해제 -> 삭제하지 않고 비활성화 유지 (리스트 등록 상태 유지 목적)
-                    if(!$cr->dry()){
-                        $cr->setActive(false);
-                        $cr->save();
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * 캐릭터의 모든 개인 권한을 완전히 삭제
+     * character_acl upsert (로그인/편집/만료/메모). 행 없으면 생성.
+     * init 모드(검색으로 추가)면 기본값(canLogin=1, canEdit=0)으로 1회 생성만 한다.
      * @param CharacterModel $adminCharacter
      * @param int $targetCharacterId
+     * @param array $settings  canLogin, canEdit, expires(절대 시각), memo, init
+     * @throws \Exception
      */
-    protected function removePersonalSettings(CharacterModel $adminCharacter, int $targetCharacterId){
-        $logger = self::getLogger('ADMIN');
-        $logger->write(sprintf('removePersonalSettings: targetCharacterId=%s', $targetCharacterId));
+    protected function saveCharacterAcl(CharacterModel $adminCharacter, int $targetCharacterId, array $settings){
+        if($targetCharacterId <= 0){
+            return;
+        }
 
-        /** @var CharacterRightModel $crm */
-        $crm = CharacterModel::getNew('CharacterRightModel');
-        $rights = $crm->find(['characterId = ?', $targetCharacterId]);
+        $acl = CharacterAclModel::getByCharacterId($targetCharacterId);
 
-        if($rights){
-            $toErase = is_array($rights) ? $rights : iterator_to_array($rights);
-            foreach($toErase as $right){
-                $right->erase();
+        if(!empty($settings['init'])){
+            // 검색으로 신규 추가: 이미 있으면 그대로 두고, 없으면 기본값으로 생성 (보기만)
+            if(!$acl){
+                $acl = CharacterAclModel::getNew('CharacterAclModel');
+                $acl->characterId = $targetCharacterId;
+                $acl->canLogin    = 1;
+                $acl->canEdit     = 0;
+                $acl->expires     = null;
+                $acl->memo        = trim((string)($settings['memo'] ?? ''));
+                $acl->updatedBy   = (int)$adminCharacter->_id;
+                $acl->save();
             }
-            $logger->write(sprintf('removePersonalSettings: Erased all rights for charId=%s', $targetCharacterId));
+            return;
+        }
+
+        if(!$acl){
+            $acl = CharacterAclModel::getNew('CharacterAclModel');
+            $acl->characterId = $targetCharacterId;
+        }
+        $acl->canLogin  = !empty($settings['canLogin']) ? 1 : 0;
+        $acl->canEdit   = !empty($settings['canEdit']) ? 1 : 0;
+        $acl->expires   = $this->parseExpires($settings['expires'] ?? '');
+        if(isset($settings['memo'])){
+            $acl->memo = trim((string)$settings['memo']);
+        }
+        $acl->updatedBy = (int)$adminCharacter->_id;
+        $acl->save();
+    }
+
+    /**
+     * character_acl 하드 제거 (개인 예외 완전 삭제 → 해당 캐릭터는 corp 정책으로 복귀).
+     * @param CharacterModel $adminCharacter
+     * @param int $targetCharacterId
+     * @throws \Exception
+     */
+    protected function removeCharacterAcl(CharacterModel $adminCharacter, int $targetCharacterId){
+        if($acl = CharacterAclModel::getByCharacterId($targetCharacterId)){
+            $acl->erase();
         }
     }
 
@@ -552,42 +502,87 @@ class Admin extends Controller{
     }
 
     /**
-     * init /settings page data
+     * init /settings (ACL) page data
+     * -> corp_acl / character_acl 행을 화면용 데이터로 변환한다.
      * @param \Base $f3
      * @param CharacterModel $character
+     * @throws \Exception
      */
     protected function initSettings(\Base $f3, CharacterModel $character){
         $data = (object) [];
-        $corporations = $this->getAccessibleCorporations($character);
+        $timezone = $f3->get('getTimeZone')();
 
-        foreach($corporations as $corporation){
-            $data->corporations[$corporation->name] = $corporation;
-        }
-
-        // Fetch characters that have at least one personal right stored
-        /** @var CharacterRightModel $crm */
-        $crm = CharacterRightModel::getNew('CharacterRightModel');
-        $allRights = $crm->find();
-
-        $charIds = [];
-        if($allRights){
-            foreach($allRights as $r){
-                $cId = (int)$r->get('characterId', true);
-                $charIds[] = $cId;
-            }
-            $charIds = array_unique(array_filter($charIds));
-        }
-
-        $data->characters = [];
-        if(!empty($charIds)){
-            /** @var CharacterModel $charModel */
-            $charModel = CharacterModel::getNew('CharacterModel');
-            if($foundChars = $charModel->find(['id IN (?)', $charIds])){
-                $data->characters = $foundChars;
+        // corp ACL 목록 (로그인 허용 우선, 그다음 만료 임박 순)
+        $data->corpAcls = [];
+        $corpAclModel = CorpAclModel::getNew('CorpAclModel');
+        if($corpRows = $corpAclModel->find(null, ['order' => 'canLogin DESC, expires'])){
+            foreach($corpRows as $row){
+                $corpId = (int)$row->corporationId;
+                $corp = CorporationModel::getNew('CorporationModel');
+                $corp->getById($corpId);
+                $data->corpAcls[] = (object)[
+                    'id'        => $corpId,
+                    'name'      => $corp->valid() ? $corp->name : ('ID: ' . $corpId),
+                    'canLogin'  => (bool)$row->canLogin,
+                    'canEdit'   => (bool)$row->canEdit,
+                    'expires'   => $row->expires ? : '',
+                    'updatedBy' => (int)$row->updatedBy
+                ];
+                $corp->reset();
             }
         }
+
+        // character ACL 목록
+        $data->characterAcls = [];
+        $charAclModel = CharacterAclModel::getNew('CharacterAclModel');
+        if($charRows = $charAclModel->find(null, ['order' => 'canLogin DESC, expires'])){
+            foreach($charRows as $row){
+                $charId = (int)$row->characterId;
+                $char = CharacterModel::getNew('CharacterModel');
+                $char->load(['id = ?', $charId]);
+                $data->characterAcls[] = (object)[
+                    'id'        => $charId,
+                    'name'      => (!$char->dry()) ? $char->name : ('ID: ' . $charId),
+                    'canLogin'  => (bool)$row->canLogin,
+                    'canEdit'   => (bool)$row->canEdit,
+                    'expires'   => $row->expires ? : '',
+                    'memo'      => (string)$row->memo,
+                    'updatedBy' => (int)$row->updatedBy
+                ];
+                $char->reset();
+            }
+        }
+
+        // JS 만료 계산 기준이 되는 서버 현재 시각
+        $data->serverNow = (new \DateTime('now', $timezone))->format('Y-m-d H:i:s');
 
         $f3->set('tplSettings', $data);
+    }
+
+    /**
+     * GET /admin/settings/corp/info/{corporationId}
+     * ESI에서 코퍼레이션 기본 정보를 가져와 JSON 반환 (코퍼 추가 검색용)
+     * @param \Base $f3
+     * @param int $corporationId
+     * @throws \Exception
+     */
+    protected function getCorporationInfo(\Base $f3, int $corporationId){
+        $return = (object) ['ok' => false];
+
+        if($corporationId > 0){
+            $corp = CorporationModel::getNew('CorporationModel');
+            $corp->getById($corporationId);
+            if($corp->valid()){
+                $return->ok       = true;
+                $return->id       = $corporationId;
+                $return->name     = $corp->name;
+                $return->logo_url = 'https://images.evetech.net/corporations/' . $corporationId . '/logo?size=64';
+            }
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode($return);
+        exit;
     }
 
     /**

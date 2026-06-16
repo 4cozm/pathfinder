@@ -860,50 +860,34 @@ class MapModel extends AbstractMapTrackingModel {
      * @return bool
      */
     public function hasRight(CharacterModel $character, string $rightName) : bool {
-        // 0. 개인 맵(Private): 접근 권한이 있으면 해당 맵에서 수정/삭제 허용 (character_right 무관)
+        // 0. 개인 맵(Private): 접근 권한이 있으면 해당 맵에서 수정/삭제 허용 (ACL 무관)
         if($this->isPrivate() && $this->hasAccess($character)){
             return true;
         }
 
-        // 1. 코퍼/연맹 맵: 조직 권한을 먼저 확인 (코퍼레이션 탭 설정 적용)
-        if($this->isCorporation() || $this->isAlliance()){
-            $org = ($this->isCorporation()) ? $character->getCorporation() : $character->getAlliance();
-            if($org){
-                $orgRights = $org->getRights([$rightName]);
-                if(!empty($orgRights)){
-                    /** @var CorporationRightModel $right */
-                    $right = $orgRights[0];
-                    /** @var RoleModel $requiredRole */
-                    $requiredRole = $right->roleId;
-                    /** @var RoleModel $characterRole */
-                    $characterRole = $character->roleId;
+        // SUPER (pathfinder.ini [PATHFINDER.ROLES]) → 항상 편집 허용 (부트스트랩 어드민)
+        // isSuperAdmin()은 getRole(ini 실시간)을 사용 — isAuthorized()와 동일 소스로 일관성 유지.
+        if($character->isSuperAdmin()){
+            return true;
+        }
 
-                    if($requiredRole && $characterRole){
-                        // level이 높을수록(숫자가 클수록) 강력한 권한임 (멤버: 2, 매니저: 4, 슈퍼: 10)
-                        if((int)$characterRole->level < (int)$requiredRole->level){
-                            return false; // 권한 부족
-                        }
-                        return true; // 역할 충분 → 코퍼 탭 설정대로 허용
-                    }
-                }
+        // [우선순위] 개인(character_acl) → 코퍼(corp_acl) → 기본 불가. (docs/CORP_ACL_DESIGN.md)
+        // 편집 계열 액션(map_update/create/delete/import/export/share)은 can_edit 으로 통합 판정한다.
+        // $rightName 은 호출부 호환을 위해 유지하되 단일 can_edit 으로 수렴한다.
+        $characterAcl = CharacterAclModel::getByCharacterId((int)$character->_id);
+        if($characterAcl && !$characterAcl->isExpired()){
+            return (bool)$characterAcl->canEdit; // 개인 완전 오버라이드(허용/차단), 만료면 corp으로 fallback
+        }
+
+        if($corporation = $character->getCorporation()){
+            $corpAcl = CorpAclModel::getByCorporationId((int)$corporation->_id);
+            if($corpAcl && !$corpAcl->isExpired()){
+                return (bool)$corpAcl->canEdit;
             }
         }
 
-        // 2. 개인 권한(Personal Rights): 명시적 차단만 적용 (기록 있고 active=0이면 거부)
-        $personalRights = $character->getRights([$rightName], ['addInactive' => true]);
-        if(!empty($personalRights)){
-            /** @var CharacterRightModel $pr */
-            $pr = $personalRights[0];
-            if(!$pr->dry() && !(bool)$pr->active){
-                return false; // DB에 기록이 있고 비활성 → 어드민에서 차단한 경우
-            }
-            if(!$pr->dry() && (bool)$pr->active){
-                return true; // DB에 기록이 있고 활성 → 개인 허용
-            }
-        }
-
-        // 3. 기본 접근권한(hasAccess) 확인
-        return $this->hasAccess($character);
+        // 기본: 편집 권한 없음
+        return false;
     }
 
     /**

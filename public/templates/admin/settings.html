@@ -2,163 +2,261 @@
     <div class="container col-xs-12">
         <div class="row"></div>
 
-        <h4><i class="fas fa-fw fa-cogs"></i>&nbsp;{{ ucfirst(@tplPage) }}</h4>
+        <h4><i class="fas fa-fw fa-user-shield"></i>&nbsp;접근 권한 (ACL)</h4>
 
-        <ul class="nav nav-tabs pf-nav-tabs" style="margin-bottom: 0;">
-            <li class="active"><a href="#tab-corp-rights" data-toggle="tab">Corporation Rights</a></li>
-            <li><a href="#tab-personal-rights" data-toggle="tab">Personal Rights</a></li>
+        <input type="hidden" id="pf-server-now" value="{{ @tplSettings->serverNow }}">
+
+        <check if="{{ !@tplIsSuper }}">
+            <div class="alert alert-info" style="margin-top:10px;">
+                <i class="fas fa-fw fa-eye"></i> <strong>읽기 전용</strong> — 변경은 SUPER 관리자만 할 수 있습니다. 목록 확인만 가능합니다.
+            </div>
+        </check>
+
+        {* ===== 페이지 설명 ===== *}
+        <div class="well well-sm" style="margin-top:10px;">
+            <p style="margin-bottom:6px;"><strong>이 페이지는 "누가 우리 패스파인더에 들어오고, 맵을 고칠 수 있는지"를 정하는 곳입니다.</strong></p>
+            <ul style="margin-bottom:0; padding-left:18px;">
+                <li><strong>로그인 허용</strong> : 켜면 그 코퍼 인원이 로그인해서 맵을 <strong>볼 수</strong> 있습니다. (보는 것 = 로그인)</li>
+                <li><strong>맵 수정 허용</strong> : 켜면 맵을 <strong>추가·수정·삭제</strong>할 수 있습니다. 끄면 <strong>보기만</strong> 됩니다.</li>
+                <li><strong>만료일</strong> : 비우면 <strong>무제한</strong>. 날짜가 지나면 <strong>로그인이 막힙니다.</strong></li>
+                <li><strong>개인 관리</strong> 탭의 설정은 코퍼 설정을 <strong>덮어씁니다</strong> (특정 사람만 허용/차단할 때).</li>
+            </ul>
+        </div>
+
+        <ul class="nav nav-tabs pf-nav-tabs" style="margin-bottom:0;">
+            <li class="active"><a href="#tab-corp-acl" data-toggle="tab">코퍼레이션 관리</a></li>
+            <li><a href="#tab-char-acl" data-toggle="tab">개인 관리</a></li>
         </ul>
 
         <div class="tab-content pf-tab-content">
 
             {* =========================================================== *}
-            {* TAB 1: Corporation Rights (기존 기능 유지)                   *}
+            {* TAB 1: 코퍼레이션 ACL                                         *}
             {* =========================================================== *}
-            <div class="tab-pane active" id="tab-corp-rights" style="padding-top:20px;">
-                <div class="row text-center">
-                    <repeat group="{{ @tplSettings->corporations }}" value="{{ @corporation }}" key="{{@corpName}}" counter="{{ @corpCount }}">
+            <div class="tab-pane active" id="tab-corp-acl" style="padding-top:20px;">
 
-                        <set fieldsetId = "{{ 'settings-map-' . @corporation->_id }}" />
-
-                        <form role="form" class="form-horizontal" action="/admin/{{ @tplPage}}/save/{{ @corporation->_id }}">
-                            <div class="col-sm-12 col-md-6 col-lg-4 pf-landing-pricing-panel">
-                                <div class="panel panel-default pricing-big">
-                                    <div class="panel-heading text-left">
-                                        <h3 class="panel-title">
-                                            {{ @corpCount }}. {{@corpName}}
-                                            <img class="pf-character-image" src="{{ @tplImage->eveSrcUrl('corporations', @corporation->_id, 32) }}" alt="{{ @corporation->name }}"/>
-                                        </h3>
-                                    </div>
-                                    <div class="panel-body panel-reverse-order">
-
-                                        <set isManaged = "" />
-
-                                        <fieldset class="reverse-order-footer" data-id="{{ @fieldsetId}}">
-                                            <h4 class="pf-dynamic-area">Map roles</h4>
-
-                                            <repeat group="{{ @corporation->getRights() }}" value="{{ @corporationRight }}" >
-                                                <check if="{{ @tplDefaultRole->_id != @corporationRight->roleId->_id }}">
-                                                    <set isManaged = "checked" />
-                                                </check>
-
-                                                <include href="templates/modules/role_select_row.html"with="right={{@corporationRight}},id={{@corporation->_id}},roles={{@tplRoles}}"/>
-                                            </repeat>
-                                        </fieldset>
-
-                                        <div class="reverse-order-header">
-                                            <div class="row">
-                                                <div class="col-sm-12">
-                                                    <div class="col-sm-12 col-md-6">
-                                                        <div class="form-group">
-                                                            <div class="col-xs-6 col-sm-12  checkbox checkbox-warning">
-                                                                <input id="{{ @fieldsetId}}" name="managed" value="1" type="checkbox" data-target="{{ @fieldsetId}}" {{ @isManaged }}>
-                                                                <label for="{{ @fieldsetId}}">Managed mode
-                                                                    <i class="fas fa-fw fa-sm fa-question-circle pf-help-light" title="If active, admin roles can be set for some actions"></i>
-                                                                </label>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div class="pf-dialog-warning-container alert alert-info">
-                                            <span class="txt-color txt-color-info">Cache expire</span>
-                                            <small> Roles are cached for 2min</small>
-                                        </div>
-
-                                    </div>
-                                    <div class="panel-footer text-right">
-                                        <button type="submit" class="btn btn-success pf-overlay-trigger">
-                                            <i class="fas fa-fw fa-check"></i> save
-                                        </button>
-                                    </div>
+                <check if="{{ @tplIsSuper }}">
+                    <div class="well well-sm" style="margin-bottom:20px;">
+                        <h5><i class="fas fa-fw fa-plus"></i> 코퍼레이션 ID로 검색 후 추가</h5>
+                        <div class="row">
+                            <div class="col-xs-12 col-sm-6 col-md-4">
+                                <div class="input-group">
+                                    <input type="number" id="corp-id-input" class="form-control" placeholder="Corporation ID (예: 98000001)">
+                                    <span class="input-group-btn">
+                                        <button class="btn btn-default" type="button" id="corp-search-btn">검색</button>
+                                    </span>
                                 </div>
                             </div>
-                        </form>
+                        </div>
+                        <div id="corp-preview" style="display:none; margin-top:15px;">
+                            <div class="media">
+                                <div class="media-left"><img id="corp-logo" class="media-object img-rounded" src="" width="48" height="48"></div>
+                                <div class="media-body">
+                                    <h5 class="media-heading" id="corp-name"></h5>
+                                    <button class="btn btn-success btn-sm" type="button" id="corp-add-btn">
+                                        <i class="fas fa-fw fa-plus"></i> 추가 (기본: 보기만 · 무제한)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="corp-error" class="alert alert-danger" style="display:none; margin-top:15px; margin-bottom:0;"></div>
+                    </div>
+                </check>
+
+                <div class="row" id="corp-acl-list">
+                    <repeat group="{{ @tplSettings->corpAcls }}" value="{{ @acl }}" counter="{{ @i }}">
+                        <div class="col-sm-12 col-md-6 col-lg-4">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <strong>{{ @i }}. {{ @acl->name }}</strong>
+                                    <img class="pf-character-image pull-right" src="{{ @tplImage->eveSrcUrl('corporations', @acl->id, 32) }}" alt="{{ @acl->name }}"/>
+                                </div>
+                                <div class="panel-body">
+
+                                    <check if="{{ @tplIsSuper }}">
+                                        <form role="form" method="POST" class="pf-acl-form"
+                                              action="/admin/settings/corp/save/{{ @acl->id }}"
+                                              data-type="corp"
+                                              data-name="{{ @acl->name }}"
+                                              data-orig-login="{{ @acl->canLogin ? '1' : '0' }}"
+                                              data-orig-edit="{{ @acl->canEdit ? '1' : '0' }}"
+                                              data-orig-expires="{{ @acl->expires }}">
+
+                                            <div class="checkbox checkbox-success" style="margin-top:0;">
+                                                <input id="corp-login-{{ @acl->id }}" type="checkbox" name="canLogin" value="1" <check if="{{ @acl->canLogin }}">checked</check>>
+                                                <label for="corp-login-{{ @acl->id }}">로그인 허용 (맵 보기)</label>
+                                            </div>
+                                            <div class="checkbox checkbox-warning">
+                                                <input id="corp-edit-{{ @acl->id }}" type="checkbox" name="canEdit" value="1" <check if="{{ @acl->canEdit }}">checked</check>>
+                                                <label for="corp-edit-{{ @acl->id }}">맵 수정 허용 (끄면 보기만)</label>
+                                            </div>
+
+                                            <div class="pf-exp-controls" style="margin-top:8px; padding-top:8px; border-top:1px solid #3a3f44;">
+                                                <input type="hidden" name="expires" value="{{ @acl->expires }}">
+                                                <div style="font-size:11px; margin-bottom:4px;">현재 만료: <span class="pf-acl-status" data-expires="{{ @acl->expires }}"></span></div>
+                                                <div class="row" style="margin:0 -5px;">
+                                                    <div class="col-xs-4" style="padding:0 5px;">
+                                                        <select class="form-control input-sm pf-exp-dir">
+                                                            <option value="add">추가</option>
+                                                            <option value="sub">감소</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-xs-4" style="padding:0 5px;">
+                                                        <input type="number" min="0" class="form-control input-sm pf-exp-num" placeholder="0">
+                                                    </div>
+                                                    <div class="col-xs-4" style="padding:0 5px;">
+                                                        <select class="form-control input-sm pf-exp-unit">
+                                                            <option value="hour">시간</option>
+                                                            <option value="day" selected>일</option>
+                                                            <option value="week">주</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <label style="font-weight:normal; margin:6px 0 0;"><input type="checkbox" class="pf-exp-unlimited"> 무제한으로</label>
+                                                <div class="pf-exp-preview text-muted" style="font-size:11px; min-height:16px;"></div>
+                                            </div>
+
+                                            <div class="text-right" style="margin-top:10px;">
+                                                <a href="/admin/settings/corp/remove/{{ @acl->id }}" class="btn btn-danger btn-xs pull-left"
+                                                   onclick="return confirm('{{ @acl->name }} 을(를) 목록에서 완전히 제거할까요?');">
+                                                    <i class="fas fa-fw fa-trash"></i> 제거
+                                                </a>
+                                                <button type="submit" class="btn btn-success btn-sm">
+                                                    <i class="fas fa-fw fa-check"></i> 저장
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </check>
+
+                                    <check if="{{ !@tplIsSuper }}">
+                                        <p>로그인: <check if="{{ @acl->canLogin }}"><span class="label label-success">허용</span></check><check if="{{ !@acl->canLogin }}"><span class="label label-default">차단</span></check>
+                                        &nbsp; 수정: <check if="{{ @acl->canEdit }}"><span class="label label-warning">허용</span></check><check if="{{ !@acl->canEdit }}"><span class="label label-default">보기만</span></check></p>
+                                        <p>만료: <span class="pf-acl-status" data-expires="{{ @acl->expires }}"></span></p>
+                                    </check>
+
+                                </div>
+                            </div>
+                        </div>
                     </repeat>
                 </div>
             </div>
 
             {* =========================================================== *}
-            {* TAB 2: Personal Rights (개별 유저 맵 권한)                  *}
+            {* TAB 2: 개인(캐릭터) ACL                                       *}
             {* =========================================================== *}
-            <div class="tab-pane" id="tab-personal-rights" style="padding-top:20px;">
+            <div class="tab-pane" id="tab-char-acl" style="padding-top:20px;">
 
-                {* 유저 검색 & 추가 *}
-                <div class="well well-sm" style="margin-bottom:20px;">
-                    <h5><i class="fas fa-fw fa-user-plus"></i> EVE 캐릭터 UID로 검색 후 개인 권한 추가</h5>
-                    <p class="text-info" style="margin-bottom: 15px;">
-                        <i class="fas fa-fw fa-info-circle"></i>
-                        이곳에 ID를 등록하면 기본 맵인 <strong>"고양이 구멍"</strong>에 대한 view 가 활성화 됩니다.
-                    </p>
-                    <div class="row">
-                        <div class="col-xs-12 col-sm-6 col-md-4">
-                            <div class="input-group">
-                                <input type="number" id="personal-uid-input" class="form-control" placeholder="EVE Character ID (e.g. 2112345678)">
-                                <span class="input-group-btn">
-                                    <button class="btn btn-default" type="button" id="personal-search-btn">Search</button>
-                                </span>
-                            </div>
-                        </div>
-                        <div class="col-xs-12 col-sm-6 col-md-4">
-                            <input type="text" id="personal-memo-input" class="form-control" placeholder="메모 (선택, 예: 본캐 이름, 얼라 소속 등)">
-                        </div>
-                    </div>
-                    <div id="personal-preview" style="display:none; margin-top:15px;">
-                        <div class="media">
-                            <div class="media-left">
-                                <img id="personal-portrait" class="media-object img-rounded" src="" alt="Portrait" width="64" height="64">
-                            </div>
-                            <div class="media-body">
-                                <h4 class="media-heading" id="personal-name"></h4>
-                                <p id="personal-corp" class="text-muted"></p>
-                                <button class="btn btn-success btn-sm" type="button" id="personal-add-btn">
-                                    <i class="fas fa-fw fa-plus"></i> Add to Personal Rights
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="personal-error" class="alert alert-danger" style="display:none; margin-top:15px; margin-bottom:0;"></div>
-                </div>
-
-                {* 등록된 개인 캐릭터 권한 목록 *}
-                <div class="row text-center" id="personal-rights-list">
-                    <repeat group="{{ @tplSettings->characters }}" value="{{ @char }}" counter="{{ @charCount }}">
-                        {* [AI NOTE] IMPORTANT: Always use POST for admin form submissions.
-                           GET requests will lose query parameters due to Traefik proxy/rewrite rules. *}
-                        <form role="form" class="form-horizontal" method="POST" action="/admin/{{ @tplPage}}/savePersonal/{{ @char->id }}">
-                            <div class="col-sm-12 col-md-6 col-lg-4 pf-landing-pricing-panel">
-                                <div class="panel panel-default pricing-big">
-                                    <div class="panel-heading text-left">
-                                        <h3 class="panel-title">
-                                            {{ @charCount }}. {{ @char->name }}
-                                            <img class="pf-character-image" src="{{ @tplImage->eveSrcUrl('characters', @char->id, 32) }}" alt="{{ @char->name }}"/>
-                                        </h3>
-                                    </div>
-                                    <div class="panel-body">
-                                        <div class="form-group" style="padding: 0 15px;">
-                                            <label class="control-label text-left pf-help-light" style="display:block; text-align:left; font-size: 11px;">메모</label>
-                                            <input type="text" name="memo" class="form-control input-sm" placeholder="메모" value="{{ trim(@char->adminMemo) }}">
-                                        </div>
-                                        <hr style="margin: 10px 0;">
-                                        <repeat group="{{ @char->getRights(null, ['addInactive' => true]) }}" value="{{ @right }}">
-                                            <include href="templates/modules/personal_right_row.html" with="right={{ @right }}, character={{ @char }}"/>
-                                        </repeat>
-                                    </div>
-                                    <div class="panel-footer text-right">
-                                        <a href="/admin/{{ @tplPage }}/removePersonal/{{ @char->id }}"
-                                           class="btn btn-danger btn-sm pf-overlay-trigger pull-left"
-                                           onclick="return confirm('{{ @char->name }} 의 모든 개인 권한을 삭제하시겠습니까?');">
-                                            <i class="fas fa-fw fa-trash"></i> Remove
-                                        </a>
-                                        <button type="submit" class="btn btn-success pf-overlay-trigger">
-                                            <i class="fas fa-fw fa-check"></i> save
-                                        </button>
-                                    </div>
+                <check if="{{ @tplIsSuper }}">
+                    <div class="well well-sm" style="margin-bottom:20px;">
+                        <h5><i class="fas fa-fw fa-user-plus"></i> 캐릭터 ID로 검색 후 추가 (코퍼 설정을 덮어씀)</h5>
+                        <div class="row">
+                            <div class="col-xs-12 col-sm-6 col-md-4">
+                                <div class="input-group">
+                                    <input type="number" id="char-id-input" class="form-control" placeholder="Character ID (예: 2112345678)">
+                                    <span class="input-group-btn">
+                                        <button class="btn btn-default" type="button" id="char-search-btn">검색</button>
+                                    </span>
                                 </div>
                             </div>
-                        </form>
+                            <div class="col-xs-12 col-sm-6 col-md-4">
+                                <input type="text" id="char-memo-input" class="form-control" placeholder="메모 (선택)">
+                            </div>
+                        </div>
+                        <div id="char-preview" style="display:none; margin-top:15px;">
+                            <div class="media">
+                                <div class="media-left"><img id="char-portrait" class="media-object img-rounded" src="" width="48" height="48"></div>
+                                <div class="media-body">
+                                    <h5 class="media-heading" id="char-name"></h5>
+                                    <p id="char-corp" class="text-muted" style="margin:0 0 6px;"></p>
+                                    <button class="btn btn-success btn-sm" type="button" id="char-add-btn">
+                                        <i class="fas fa-fw fa-plus"></i> 추가 (기본: 보기만 · 무제한)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="char-error" class="alert alert-danger" style="display:none; margin-top:15px; margin-bottom:0;"></div>
+                    </div>
+                </check>
+
+                <div class="row" id="char-acl-list">
+                    <repeat group="{{ @tplSettings->characterAcls }}" value="{{ @acl }}" counter="{{ @i }}">
+                        <div class="col-sm-12 col-md-6 col-lg-4">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <strong>{{ @i }}. {{ @acl->name }}</strong>
+                                    <img class="pf-character-image pull-right" src="{{ @tplImage->eveSrcUrl('characters', @acl->id, 32) }}" alt="{{ @acl->name }}"/>
+                                </div>
+                                <div class="panel-body">
+
+                                    <check if="{{ @tplIsSuper }}">
+                                        <form role="form" method="POST" class="pf-acl-form"
+                                              action="/admin/settings/character/save/{{ @acl->id }}"
+                                              data-type="character"
+                                              data-name="{{ @acl->name }}"
+                                              data-orig-login="{{ @acl->canLogin ? '1' : '0' }}"
+                                              data-orig-edit="{{ @acl->canEdit ? '1' : '0' }}"
+                                              data-orig-expires="{{ @acl->expires }}"
+                                              data-orig-memo="{{ @acl->memo }}">
+
+                                            <div class="form-group">
+                                                <input type="text" name="memo" class="form-control input-sm" placeholder="메모" value="{{ @acl->memo }}">
+                                            </div>
+                                            <div class="checkbox checkbox-success" style="margin-top:0;">
+                                                <input id="char-login-{{ @acl->id }}" type="checkbox" name="canLogin" value="1" <check if="{{ @acl->canLogin }}">checked</check>>
+                                                <label for="char-login-{{ @acl->id }}">로그인 허용 (맵 보기)</label>
+                                            </div>
+                                            <div class="checkbox checkbox-warning">
+                                                <input id="char-edit-{{ @acl->id }}" type="checkbox" name="canEdit" value="1" <check if="{{ @acl->canEdit }}">checked</check>>
+                                                <label for="char-edit-{{ @acl->id }}">맵 수정 허용 (끄면 보기만)</label>
+                                            </div>
+
+                                            <div class="pf-exp-controls" style="margin-top:8px; padding-top:8px; border-top:1px solid #3a3f44;">
+                                                <input type="hidden" name="expires" value="{{ @acl->expires }}">
+                                                <div style="font-size:11px; margin-bottom:4px;">현재 만료: <span class="pf-acl-status" data-expires="{{ @acl->expires }}"></span></div>
+                                                <div class="row" style="margin:0 -5px;">
+                                                    <div class="col-xs-4" style="padding:0 5px;">
+                                                        <select class="form-control input-sm pf-exp-dir">
+                                                            <option value="add">추가</option>
+                                                            <option value="sub">감소</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-xs-4" style="padding:0 5px;">
+                                                        <input type="number" min="0" class="form-control input-sm pf-exp-num" placeholder="0">
+                                                    </div>
+                                                    <div class="col-xs-4" style="padding:0 5px;">
+                                                        <select class="form-control input-sm pf-exp-unit">
+                                                            <option value="hour">시간</option>
+                                                            <option value="day" selected>일</option>
+                                                            <option value="week">주</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <label style="font-weight:normal; margin:6px 0 0;"><input type="checkbox" class="pf-exp-unlimited"> 무제한으로</label>
+                                                <div class="pf-exp-preview text-muted" style="font-size:11px; min-height:16px;"></div>
+                                            </div>
+
+                                            <div class="text-right" style="margin-top:10px;">
+                                                <a href="/admin/settings/character/remove/{{ @acl->id }}" class="btn btn-danger btn-xs pull-left"
+                                                   onclick="return confirm('{{ @acl->name }} 의 개인 설정을 삭제할까요? (이후 코퍼 설정을 따릅니다)');">
+                                                    <i class="fas fa-fw fa-trash"></i> 제거
+                                                </a>
+                                                <button type="submit" class="btn btn-success btn-sm">
+                                                    <i class="fas fa-fw fa-check"></i> 저장
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </check>
+
+                                    <check if="{{ !@tplIsSuper }}">
+                                        <check if="{{ @acl->memo }}"><p class="text-muted" style="margin:0 0 6px;">{{ @acl->memo }}</p></check>
+                                        <p>로그인: <check if="{{ @acl->canLogin }}"><span class="label label-success">허용</span></check><check if="{{ !@acl->canLogin }}"><span class="label label-default">차단</span></check>
+                                        &nbsp; 수정: <check if="{{ @acl->canEdit }}"><span class="label label-warning">허용</span></check><check if="{{ !@acl->canEdit }}"><span class="label label-default">보기만</span></check></p>
+                                        <p>만료: <span class="pf-acl-status" data-expires="{{ @acl->expires }}"></span></p>
+                                    </check>
+
+                                </div>
+                            </div>
+                        </div>
                     </repeat>
                 </div>
             </div>
@@ -169,78 +267,246 @@
 
 <script>
 (function(){
-    var uidInput  = document.getElementById('personal-uid-input');
-    var searchBtn = document.getElementById('personal-search-btn');
-    var preview   = document.getElementById('personal-preview');
-    var portrait  = document.getElementById('personal-portrait');
-    var nameEl    = document.getElementById('personal-name');
-    var corpEl    = document.getElementById('personal-corp');
-    var memoInput = document.getElementById('personal-memo-input');
-    var addBtn    = document.getElementById('personal-add-btn');
-    var errorEl   = document.getElementById('personal-error');
+    var SERVER_NOW = (document.getElementById('pf-server-now') || {}).value || '';
 
-    function showError(msg){ errorEl.textContent = msg; errorEl.style.display = 'block'; preview.style.display = 'none'; }
-    function hideAll(){ errorEl.style.display = 'none'; preview.style.display = 'none'; }
+    function pad(n){ return (n < 10 ? '0' : '') + n; }
+    function parseDt(s){
+        if(!s) return null;
+        var d = new Date(String(s).trim().replace(' ', 'T'));
+        return isNaN(d.getTime()) ? null : d;
+    }
+    function fmtDt(d){
+        return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' +
+               pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    }
+    function unitSec(u){ return u === 'hour' ? 3600 : (u === 'week' ? 604800 : 86400); }
+    function unitLabel(u){ return u === 'hour' ? '시간' : (u === 'week' ? '주' : '일'); }
+    function now(){ return parseDt(SERVER_NOW) || new Date(); }
 
-    searchBtn.addEventListener('click', function(){
-        var uid = parseInt(uidInput.value, 10);
-        if(!uid){ showError('유효한 캐릭터 ID를 입력하세요.'); return; }
-        
-        hideAll();
-        
-        // 버튼 로딩 상태 활성화
-        searchBtn.disabled = true;
-        searchBtn.textContent = '검색중...';
+    // 추가/삭제도 POST 로 통일 (GET 쿼리는 프록시(Traefik)에서 유실될 수 있어 canLogin/init 누락 사고 방지)
+    function postTo(action, fields){
+        var f = document.createElement('form');
+        f.method = 'POST';
+        f.action = action;
+        f.style.display = 'none';
+        Object.keys(fields).forEach(function(k){
+            var inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = k;
+            inp.value = fields[k];
+            f.appendChild(inp);
+        });
+        document.body.appendChild(f);
+        f.submit();
+    }
 
-        fetch('/admin/members/info/' + uid)
-            .then(function(r){ return r.json(); })
-            .then(function(d){
-                if(d.ok){
-                    portrait.src = d.portrait_url;
-                    nameEl.textContent = d.name;
-                    corpEl.textContent = d.corporation_name;
-                    preview.style.display = 'block';
-                }else{
-                    showError('캐릭터를 찾을 수 없습니다.');
+    function statusHtml(expires){
+        if(!expires) return '<span class="label label-success">무제한</span>';
+        var e = parseDt(expires), n = now();
+        if(!e) return expires;
+        if(e.getTime() <= n.getTime()){
+            var past = Math.floor((n.getTime() - e.getTime())/86400000);
+            return '<span class="label label-danger">만료됨' + (past > 0 ? ' (' + past + '일 지남)' : '') + '</span>';
+        }
+        var dleft = Math.floor((e.getTime() - n.getTime())/86400000);
+        var cls = dleft <= 1 ? 'label-warning' : 'label-info';
+        var txt = (dleft === 0 ? '오늘 만료' : (expires.substring(0,16) + ' (D-' + dleft + ')'));
+        return '<span class="label ' + cls + '">' + txt + '</span>';
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.pf-acl-status'), function(el){
+        el.innerHTML = statusHtml(el.getAttribute('data-expires') || '');
+    });
+
+    function recompute(ctrl){
+        var form = ctrl.closest('form');
+        if(!form) return;
+        var hidden = form.querySelector('input[name=expires]');
+        var preview = ctrl.querySelector('.pf-exp-preview');
+        var origExpires = form.getAttribute('data-orig-expires') || '';
+        var unlimited = ctrl.querySelector('.pf-exp-unlimited').checked;
+        var numEl = ctrl.querySelector('.pf-exp-num');
+        var dirEl = ctrl.querySelector('.pf-exp-dir');
+        var unitEl = ctrl.querySelector('.pf-exp-unit');
+        var num = parseInt(numEl.value, 10) || 0;
+        var dir = dirEl.value;
+        var unit = unitEl.value;
+        var n = now();
+        var origDate = parseDt(origExpires);
+        var futureOrig = origDate && origDate.getTime() > n.getTime();
+
+        numEl.disabled = unlimited;
+        dirEl.disabled = unlimited;
+        unitEl.disabled = unlimited;
+
+        var result, prev;
+        if(unlimited){
+            result = ''; prev = '→ 무제한';
+        } else if(num <= 0){
+            result = origExpires; prev = '';
+        } else if(dir === 'sub' && !futureOrig){
+            result = origExpires;
+            prev = '<span style="color:#999">감소는 미래 만료가 있을 때만 가능합니다</span>';
+        } else {
+            var base = futureOrig ? origDate : n;
+            var deltaMs = num * unitSec(unit) * 1000;
+            var nd = new Date(base.getTime() + (dir === 'sub' ? -deltaMs : deltaMs));
+            if(nd.getTime() <= n.getTime()){
+                result = fmtDt(n);
+                prev = '<span style="color:#d9534f">→ 지금 (즉시 만료, 로그인 차단)</span>';
+            } else {
+                result = fmtDt(nd);
+                prev = '→ ' + result.substring(0,16) + ' (' + num + unitLabel(unit) + (dir === 'sub' ? ' 감소' : ' 추가') + ')';
+            }
+        }
+        hidden.value = result;
+        preview.innerHTML = prev;
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.pf-exp-controls'), function(ctrl){
+        ['change', 'input'].forEach(function(ev){
+            ctrl.addEventListener(ev, function(e){
+                var t = e.target;
+                if(t.classList.contains('pf-exp-num') || t.classList.contains('pf-exp-dir') ||
+                   t.classList.contains('pf-exp-unit') || t.classList.contains('pf-exp-unlimited')){
+                    recompute(ctrl);
                 }
-            })
-            .catch(function(){ 
-                showError('네트워크 오류가 발생했습니다.'); 
-            })
-            .finally(function(){
-                // 버튼 상태 복구
-                searchBtn.disabled = false;
-                searchBtn.textContent = 'Search';
             });
-    });
-
-    addBtn.addEventListener('click', function(){
-        var uid = parseInt(uidInput.value, 10);
-        if(!uid) return;
-        var memo = encodeURIComponent(memoInput.value.trim());
-        // savePersonal/0 with uid param — server creates a dummy inactive right entry
-        // so the character appears in the list; actual rights are saved on form submit
-        window.location.href = '/admin/settings/savePersonal/' + uid + '?init=1&memo=' + memo;
-    });
-
-    // 폼 제출 시 저장 버튼 비활성화 및 디버깅 로그 (모든 personal rights form에 적용)
-    document.querySelectorAll('#personal-rights-list form').forEach(function(form){
-        form.addEventListener('submit', function(e){
-            var submitBtn = form.querySelector('button[type="submit"]');
-            var formData = new FormData(form);
-            
-            console.log('--- Personal Right Form Submit ---');
-            console.log('Action:', form.action);
-            console.log('Method:', form.getAttribute('method'));
-            for (var pair of formData.entries()) {
-                console.log(pair[0] + ': ' + pair[1]);
-            }
-
-            if(submitBtn){
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-fw fa-sync fa-spin"></i> saving...';
-            }
         });
     });
+
+    function showDiff(title, lines, onConfirm){
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;';
+        var box = document.createElement('div');
+        box.style.cssText = 'background:#2c3034;color:#e0e0e0;border:1px solid #555;border-radius:4px;max-width:480px;width:92%;padding:18px;box-shadow:0 4px 24px rgba(0,0,0,.5);';
+        var warn = false;
+        var html = '<h4 style="margin-top:0;">변경 사항 확인' + (title ? ' — ' + title : '') + '</h4><hr style="margin:10px 0;">';
+        lines.forEach(function(l){
+            if(l.warn) warn = true;
+            html += '<div style="margin:6px 0;' + (l.warn ? 'color:#d9534f;font-weight:bold;' : '') + '">' +
+                    (l.warn ? '⚠ ' : '') + '<strong>' + l.t + '</strong>&nbsp; ' +
+                    '<span style="color:#999">' + l.o + '</span> → <span>' + l.n + '</span>' +
+                    (l.note ? ' <small style="color:#999">(' + l.note + ')</small>' : '') + '</div>';
+        });
+        if(warn){
+            html += '<div class="alert alert-danger" style="margin:10px 0 0;padding:6px 10px;">저장 즉시 해당 대상의 로그인이 차단됩니다.</div>';
+        }
+        html += '<hr style="margin:12px 0 10px;"><div style="text-align:right;">' +
+                '<button type="button" class="btn btn-default btn-sm pf-diff-cancel">취소</button>&nbsp;' +
+                '<button type="button" class="btn ' + (warn ? 'btn-danger' : 'btn-success') + ' btn-sm pf-diff-ok">' +
+                (warn ? '즉시 만료하고 저장' : '저장') + '</button></div>';
+        box.innerHTML = html;
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        function close(){ if(overlay.parentNode){ overlay.parentNode.removeChild(overlay); } }
+        box.querySelector('.pf-diff-cancel').addEventListener('click', close);
+        box.querySelector('.pf-diff-ok').addEventListener('click', function(){ close(); onConfirm(); });
+        overlay.addEventListener('click', function(e){ if(e.target === overlay){ close(); } });
+    }
+
+    function buildDiff(form){
+        var lines = [];
+        var n = now();
+        var origLogin = form.getAttribute('data-orig-login') === '1';
+        var origEdit  = form.getAttribute('data-orig-edit') === '1';
+        var origExpires = form.getAttribute('data-orig-expires') || '';
+        var loginEl = form.querySelector('input[name=canLogin]');
+        var editEl  = form.querySelector('input[name=canEdit]');
+        var expEl   = form.querySelector('input[name=expires]');
+        var memoEl  = form.querySelector('input[name=memo]');
+        var newLogin = loginEl ? loginEl.checked : origLogin;
+        var newEdit  = editEl ? editEl.checked : origEdit;
+        var newExpires = expEl ? (expEl.value || '') : origExpires;
+
+        if(newLogin !== origLogin)
+            lines.push({ t:'로그인', o: origLogin ? '허용' : '차단', n: newLogin ? '허용' : '차단' });
+        if(newEdit !== origEdit)
+            lines.push({ t:'편집권한', o: origEdit ? '수정 허용' : '보기만', n: newEdit ? '수정 허용' : '보기만' });
+        if(newExpires !== origExpires){
+            var warn = false, nDisp = newExpires || '무제한';
+            if(newExpires){
+                var nd = parseDt(newExpires);
+                if(nd && nd.getTime() <= n.getTime()){ warn = true; nDisp = '지금'; }
+            }
+            lines.push({ t:'만료일', o: origExpires || '무제한', n: nDisp, warn: warn, note: warn ? '즉시 만료' : '' });
+        }
+        if(memoEl){
+            var origMemo = form.getAttribute('data-orig-memo') || '';
+            if(memoEl.value !== origMemo)
+                lines.push({ t:'메모', o: origMemo || '(없음)', n: memoEl.value || '(없음)' });
+        }
+        return lines;
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.pf-acl-form'), function(form){
+        form.addEventListener('submit', function(e){
+            if(form.getAttribute('data-confirmed') === '1') return;
+            e.preventDefault();
+            var lines = buildDiff(form);
+            if(lines.length === 0){ window.alert('변경 사항이 없습니다.'); return; }
+            showDiff(form.getAttribute('data-name') || '', lines, function(){
+                form.setAttribute('data-confirmed', '1');
+                form.submit();
+            });
+        });
+    });
+
+    // 코퍼 검색 추가
+    var corpSearch = document.getElementById('corp-search-btn');
+    if(corpSearch){
+        var corpInput = document.getElementById('corp-id-input');
+        var corpPreview = document.getElementById('corp-preview');
+        var corpLogo = document.getElementById('corp-logo');
+        var corpName = document.getElementById('corp-name');
+        var corpAdd = document.getElementById('corp-add-btn');
+        var corpErr = document.getElementById('corp-error');
+        corpSearch.addEventListener('click', function(){
+            var id = parseInt(corpInput.value, 10);
+            corpErr.style.display = 'none'; corpPreview.style.display = 'none';
+            if(!id){ corpErr.textContent = '유효한 코퍼레이션 ID를 입력하세요.'; corpErr.style.display = 'block'; return; }
+            corpSearch.disabled = true; corpSearch.textContent = '검색중...';
+            fetch('/admin/settings/corp/info/' + id).then(function(r){ return r.json(); }).then(function(d){
+                if(d.ok){ corpLogo.src = d.logo_url; corpName.textContent = d.name; corpPreview.style.display = 'block'; }
+                else { corpErr.textContent = '코퍼레이션을 찾을 수 없습니다.'; corpErr.style.display = 'block'; }
+            }).catch(function(){ corpErr.textContent = '네트워크 오류'; corpErr.style.display = 'block'; })
+              .finally(function(){ corpSearch.disabled = false; corpSearch.textContent = '검색'; });
+        });
+        corpAdd.addEventListener('click', function(){
+            var id = parseInt(corpInput.value, 10);
+            if(!id) return;
+            // 기본: 로그인 허용, 보기만, 무제한
+            postTo('/admin/settings/corp/save/' + id, { canLogin: '1' });
+        });
+    }
+
+    // 캐릭터 검색 추가
+    var charSearch = document.getElementById('char-search-btn');
+    if(charSearch){
+        var charInput = document.getElementById('char-id-input');
+        var charMemo = document.getElementById('char-memo-input');
+        var charPreview = document.getElementById('char-preview');
+        var charPortrait = document.getElementById('char-portrait');
+        var charName = document.getElementById('char-name');
+        var charCorp = document.getElementById('char-corp');
+        var charAdd = document.getElementById('char-add-btn');
+        var charErr = document.getElementById('char-error');
+        charSearch.addEventListener('click', function(){
+            var id = parseInt(charInput.value, 10);
+            charErr.style.display = 'none'; charPreview.style.display = 'none';
+            if(!id){ charErr.textContent = '유효한 캐릭터 ID를 입력하세요.'; charErr.style.display = 'block'; return; }
+            charSearch.disabled = true; charSearch.textContent = '검색중...';
+            fetch('/admin/members/info/' + id).then(function(r){ return r.json(); }).then(function(d){
+                if(d.ok){ charPortrait.src = d.portrait_url; charName.textContent = d.name; charCorp.textContent = d.corporation_name || ''; charPreview.style.display = 'block'; }
+                else { charErr.textContent = '캐릭터를 찾을 수 없습니다.'; charErr.style.display = 'block'; }
+            }).catch(function(){ charErr.textContent = '네트워크 오류'; charErr.style.display = 'block'; })
+              .finally(function(){ charSearch.disabled = false; charSearch.textContent = '검색'; });
+        });
+        charAdd.addEventListener('click', function(){
+            var id = parseInt(charInput.value, 10);
+            if(!id) return;
+            postTo('/admin/settings/character/save/' + id, { init: '1', memo: (charMemo.value || '').trim() });
+        });
+    }
 })();
 </script>

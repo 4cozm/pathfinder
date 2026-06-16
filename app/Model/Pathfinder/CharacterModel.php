@@ -684,8 +684,10 @@ class CharacterModel extends AbstractPathfinderModel {
 
     /**
      * checks whether this character is authorized to log in
-     * -> check corp/ally whitelist config (pathfinder.ini)
-     * @return string
+     * -> 우선순위: SUPER/CORPORATION(ini) → character_acl(개인) → corp_acl(코퍼) → 기본 차단
+     * -> 만료(expires) 미경과인 ACL만 권위를 가지며, 만료 시 다음 계층으로 fallback
+     * @return string  AUTHORIZATION_STATUS 키 (OK / CHARACTER / CORPORATION / KICKED / BANNED ...)
+     * @throws \Exception
      */
     public function isAuthorized() : string {
         $authStatus = 'UNKNOWN';
@@ -693,70 +695,31 @@ class CharacterModel extends AbstractPathfinderModel {
         // check whether character is banned or temp kicked
         if(is_null($this->banned)){
             if( !$this->isKicked() ){
-                // [SECURITY BYPASS] Check if this character is explicitly listed in 'Personal Rights'
-                // Registration in 'character_right' table grants login access regardless of global whitelist
-                /** @var CharacterRightModel $crm */
-                $crm = self::getNew('CharacterRightModel');
-                // active 필터와 무관하게(1 또는 0) 레코드가 하나라도 있으면 승인된 유저로 간주
-                if($crm->find(['characterId = ? AND (active = ? OR active = ?)', $this->_id, 1, 0], ['limit' => 1])){
+                // SUPER / CORPORATION (pathfinder.ini [PATHFINDER.ROLES]) → 항상 로그인 허용 (부트스트랩 어드민)
+                $role = $this->getRole();
+                if($role && in_array($role->name, ['SUPER', 'CORPORATION'], true)){
                     return 'OK';
                 }
 
-                $whitelistCharacter = array_filter( array_map('trim', (array)Config::getPathfinderData('login.character') ) );
-                $whitelistCorporations = array_filter( array_map('trim', (array)Config::getPathfinderData('login.corporation') ) );
-                $whitelistAlliance = array_filter( array_map('trim', (array)Config::getPathfinderData('login.alliance') ) );
+                // [우선순위] 개인(character_acl) → 코퍼(corp_acl) → 기본 차단. (docs/CORP_ACL_DESIGN.md)
+                // 개인 entry가 존재하고 미만료면 corp을 완전 오버라이드(허용/차단). 만료면 corp으로 fallback.
+                $characterAcl = CharacterAclModel::getByCharacterId((int)$this->_id);
+                if($characterAcl && !$characterAcl->isExpired()){
+                    return $characterAcl->canLogin ? 'OK' : 'CHARACTER';
+                }
 
-                if(
-                    empty($whitelistCharacter) &&
-                    empty($whitelistCorporations) &&
-                    empty($whitelistAlliance)
-                ){
-                    // no corp/ally restrictions set -> any character is allowed to login
-                    $authStatus = 'OK';
-                }elseif(
-                    // check if session_sharing is enabled and if a character is saved in session
-                    Config::getPathfinderData('login.session_sharing') === 1 &&
-                    is_array($this->getF3()->get(User::SESSION_KEY_CHARACTERS))
-                ){
-                    // authorized character is already logged in -> any subsequent character is allowed to login
-                    $authStatus = 'OK';
-                }else{
-                    // check if character is set in whitelist
-                    if(
-                        !empty($whitelistCharacter) &&
-                        in_array((int)$this->_id, $whitelistCharacter)
-                    ){
-                        $authStatus =  'OK';
-                    }else{
-                        $authStatus = 'CHARACTER';
-                    }
-
-                    // check if character corporation is set in whitelist
-                    if(
-                        $authStatus != 'OK' &&
-                        !empty($whitelistCorporations) &&
-                        $this->hasCorporation()
-                    ){
-                        if( in_array((int)$this->get('corporationId', true), $whitelistCorporations) ){
-                            $authStatus = 'OK';
-                        }else{
-                            $authStatus = 'CORPORATION';
-                        }
-                    }
-
-                    // check if character alliance is set in whitelist
-                    if(
-                        $authStatus != 'OK' &&
-                        !empty($whitelistAlliance) &&
-                        $this->hasAlliance()
-                    ){
-                        if( in_array((int)$this->get('allianceId', true), $whitelistAlliance) ){
-                            $authStatus =  'OK';
-                        }else{
-                            $authStatus = 'ALLIANCE';
-                        }
+                // 코퍼 계층
+                if($this->hasCorporation()){
+                    $corpAcl = CorpAclModel::getByCorporationId((int)$this->get('corporationId', true));
+                    if($corpAcl && !$corpAcl->isExpired()){
+                        return $corpAcl->canLogin ? 'OK' : 'CORPORATION';
                     }
                 }
+
+                // 기본 차단: 어떤 ACL에도 등록되지 않음.
+                // (session_sharing 로그인 바이패스는 제거됨 — 모든 캐릭터는 명시적 승인이 있어야 한다.
+                //  개별 승인이 필요하면 '개인 관리'(character_acl)에 등록한다.)
+                $authStatus = 'CORPORATION';
             }else{
                 $authStatus = 'KICKED';
             }
@@ -765,6 +728,17 @@ class CharacterModel extends AbstractPathfinderModel {
         }
 
         return $authStatus;
+    }
+
+    /**
+     * 이 캐릭터가 SUPER(어드민)인지. pathfinder.ini [PATHFINDER.ROLES] 를 실시간 조회(getRole)하므로
+     * DB 저장값(roleId)이 아닌 현재 설정 기준이다. isAuthorized / hasRight 가 동일 소스를 쓰도록 공개.
+     * @return bool
+     * @throws \Exception
+     */
+    public function isSuperAdmin() : bool {
+        $role = $this->getRole();
+        return $role && $role->name === 'SUPER';
     }
 
     /**
