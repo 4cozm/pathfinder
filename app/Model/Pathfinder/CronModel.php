@@ -289,7 +289,9 @@ class CronModel extends AbstractPathfinderModel {
                         'cpuTime' => $record->cpuTime,
                         'ioTime' => $record->ioTime,
                         'lastExecMemPeak' => $record->lastExecMemPeak,
-                        'created' => clone $record->created
+                        // created 는 이 Cortex 설정에서 문자열로 반환된다(다른 모델도 strtotime 으로 다룸).
+                        // 일부 환경에서 DateTime 객체일 수 있어, 객체일 때만 clone 한다.
+                        'created' => is_object($record->created) ? clone $record->created : $record->created
                     ];
                 }
             }
