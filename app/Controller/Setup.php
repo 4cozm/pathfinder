@@ -1273,7 +1273,12 @@ class Setup extends Controller {
                             }
 
                             // check type changed ---------------------------------------------------------------------
+                            // skip virtual/relation fields (has-many/has-one) that share a name with an existing
+                            // DB column but carry no scalar 'type'. isCompatible(null,..) would do
+                            // foreach(dataTypes[''] === null) and fatal. (e.g. cron.history: legacy TEXT column
+                            // vs. has-many relation -> see CronModel)
                             if(
+                                !empty($fieldConf['type']) &&
                                 $fieldConf['type'] !== 'JSON' &&
                                 !$schema->isCompatible($fieldConf['type'], $currentColType)
                             ){
