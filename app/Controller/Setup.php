@@ -64,6 +64,7 @@ class Setup extends Controller {
             'info' => [],
             'models' => [
                 'Model\Pathfinder\CronModel',
+                'Model\Pathfinder\CronHistoryModel',
                 'Model\Pathfinder\UserModel',
                 'Model\Pathfinder\AllianceModel',
                 'Model\Pathfinder\CorporationModel',

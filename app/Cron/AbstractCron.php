@@ -243,19 +243,24 @@ abstract class AbstractCron {
             }
 
             // Insert into History
-            $historyModel = new Pathfinder\CronHistoryModel();
-            $historyModel->cronId = $cronModel->_id;
-            $historyModel->lastExecDuration = $duration;
-            $historyModel->cpuTime = $cpuTime;
-            $historyModel->ioTime = $ioTime;
-            $historyModel->lastExecMemPeak = $memPeak;
-            $historyModel->save();
+            // cron_history 테이블이 아직 없는 레거시 DB에서는 기록을 건너뛴다(테이블은 /setup의 "Setup DB"로 생성).
+            // new CronHistoryModel() 인스턴스화 자체가 스키마 조회로 PDOException(1146)을 던지므로 먼저 존재 확인.
+            $historyDb = $f3->DB->getDB(Pathfinder\AbstractPathfinderModel::DB_ALIAS);
+            if (is_object($historyDb) && $historyDb->tableExists('cron_history')) {
+                $historyModel = new Pathfinder\CronHistoryModel();
+                $historyModel->cronId = $cronModel->_id;
+                $historyModel->lastExecDuration = $duration;
+                $historyModel->cpuTime = $cpuTime;
+                $historyModel->ioTime = $ioTime;
+                $historyModel->lastExecMemPeak = $memPeak;
+                $historyModel->save();
 
-            // Prune history (keep 100)
-            $oldRecords = $historyModel->find(['cronId = ?', $cronModel->_id], ['order' => 'created DESC', 'limit' => 50, 'offset' => 100]);
-            if ($oldRecords) {
-                foreach ($oldRecords as $rec) {
-                    $rec->erase();
+                // Prune history (keep 100)
+                $oldRecords = $historyModel->find(['cronId = ?', $cronModel->_id], ['order' => 'created DESC', 'limit' => 50, 'offset' => 100]);
+                if ($oldRecords) {
+                    foreach ($oldRecords as $rec) {
+                        $rec->erase();
+                    }
                 }
             }
 

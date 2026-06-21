@@ -273,20 +273,25 @@ class CronModel extends AbstractPathfinderModel {
      */
     protected function getHistory(bool $addLastIfFinished = false) : array {
         $history = [];
-        $historyModel = new CronHistoryModel();
-        $records = $historyModel->find(
-            ['cronId = ?', $this->_id],
-            ['order' => 'created DESC', 'limit' => 100]
-        );
-        if($records){
-            foreach($records as $record){
-                $history[] = [
-                    'lastExecDuration' => $record->lastExecDuration,
-                    'cpuTime' => $record->cpuTime,
-                    'ioTime' => $record->ioTime,
-                    'lastExecMemPeak' => $record->lastExecMemPeak,
-                    'created' => clone $record->created
-                ];
+        // cron_history 테이블이 아직 없는 레거시 DB에서는 조회를 건너뛴다.
+        // new CronHistoryModel() 인스턴스화 자체가 스키마 조회로 PDOException(1146)을 던지므로,
+        // 인스턴스화 전에 현재 모델의 DB 커넥션으로 테이블 존재 여부를 먼저 확인한다.
+        if(is_object($this->db) && $this->db->tableExists('cron_history')){
+            $historyModel = new CronHistoryModel();
+            $records = $historyModel->find(
+                ['cronId = ?', $this->_id],
+                ['order' => 'created DESC', 'limit' => 100]
+            );
+            if($records){
+                foreach($records as $record){
+                    $history[] = [
+                        'lastExecDuration' => $record->lastExecDuration,
+                        'cpuTime' => $record->cpuTime,
+                        'ioTime' => $record->ioTime,
+                        'lastExecMemPeak' => $record->lastExecMemPeak,
+                        'created' => clone $record->created
+                    ];
+                }
             }
         }
 
