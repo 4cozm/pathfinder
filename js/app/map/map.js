@@ -782,15 +782,12 @@ define([
                 MapUtil.markAsChanged(connection);
                 break;
             case 'wh_super_eol':    // set "super end of life" (collapse within ~1h)
-                if(connection.hasType('wh_super_eol')){
-                    // already "super EOL" -> reset the ~1h countdown timer (re-confirm it's still alive)
-                    resetSuperEol(connection);
-                }else{
-                    MapOverlayUtil.getMapOverlay(mapElement, 'timer').startMapUpdateCounter();
-                    // "super EOL" implies "EOL" -> ensure both are set
-                    MapUtil.addConnectionTypes(connection, ['wh_eol', 'wh_super_eol']);
-                    MapUtil.markAsChanged(connection);
-                }
+                // ensure "super EOL" locally for instant feedback, then force a fresh ~1h timer server-side
+                // via an IMMEDIATE request (not the batched sync). This guarantees the countdown resets even
+                // for "EOL 해제 -> 슈퍼 EOL 재등록" when the removal hasn't synced yet (avoids a stale-state race
+                // where the server still thinks it's already super and skips the backdate).
+                MapUtil.addConnectionTypes(connection, ['wh_eol', 'wh_super_eol']);
+                resetSuperEol(connection);
                 break;
             case 'status_fresh':
             case 'status_reduced':
@@ -2026,8 +2023,9 @@ define([
     });
 
     /**
-     * reset the "super EOL" countdown timer for a connection
-     * -> re-stamps "eolUpdated" server side so a fresh ~1h countdown starts (re-confirm hole is still alive)
+     * (re)start the "super EOL" countdown timer for a connection
+     * -> immediate request that re-stamps "eolUpdated" server side so a fresh ~1h countdown starts.
+     * -> used both when registering "super EOL" and when re-clicking it (always forces ~1h, race-free).
      * @param connection
      */
     let resetSuperEol = connection => {
@@ -2054,7 +2052,7 @@ define([
             if(!$.isEmptyObject(newConnectionData)){
                 let connection = updateConnection(payload.context.connection, newConnectionData);
                 updateConnectionCache(payload.context.mapId, connection);
-                Util.showNotify({title: '슈퍼 EOL 타이머 초기화', text: '카운트다운을 다시 시작합니다 (약 1시간)', type: 'success'});
+                Util.showNotify({title: '슈퍼 EOL', text: '붕괴까지 약 1시간 카운트다운', type: 'success'});
             }
         }).catch(console.warn);
     };
