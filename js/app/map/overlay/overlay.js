@@ -614,8 +614,8 @@ define([
     };
 
     /**
-     * format remaining seconds into an approximate Korean countdown label
-     * -> "약 30분 53초 남음" (manual human toggle -> low accuracy -> "약" prefix)
+     * format remaining seconds into an approximate Korean countdown label (minute granularity)
+     * -> "약 30분 남음" (manual human toggle -> low accuracy -> "약" prefix, seconds not critical)
      * @param remainingSec
      * @returns {string}
      */
@@ -628,13 +628,17 @@ define([
         let hours = Math.floor(left / (60 * 60));
         left = left - hours * 60 * 60;
         let min = Math.floor(left / 60);
-        let sec = left - min * 60;
+
+        if(!days && !hours && !min){
+            // less than a minute left
+            return '약 1분 미만 남음';
+        }
 
         let label = '약 ';
         if(days){ label += days + '일 '; }
         if(hours){ label += hours + '시간 '; }
         if(min){ label += min + '분 '; }
-        label += sec + '초 남음';
+        label += '남음';
         return label;
     };
 
