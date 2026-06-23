@@ -127,6 +127,7 @@ define([
                 }
 
                 Init.timer              = response.timer;
+                Init.connectionExpire   = response.connectionExpire;
                 Init.mapTypes           = response.mapTypes;
                 Init.mapScopes          = response.mapScopes;
                 Init.connectionScopes   = response.connectionScopes;

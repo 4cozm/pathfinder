@@ -102,7 +102,11 @@ define([
         let moduleData = {
             id: config.connectionContextMenuId,
             items: [
-                {icon: 'fa-hourglass-end', action: 'wh_eol', text: 'EOL 토글'},
+                {icon: 'fa-hourglass-end', action: 'wh_eol_change', text: 'EOL', subitems: [
+                        {subIcon: 'fa-hourglass-end', subIconClass: 'txt-color txt-color-pink', subAction: 'wh_eol', subText: '일반 EOL'},
+                        {subIcon: 'fa-hourglass-end', subIconClass: 'txt-color txt-color-red', subAction: 'wh_super_eol', subText: '슈퍼 EOL (1시간 이내)'}
+
+                    ]},
                 {icon: 'fa-exclamation-triangle', action: 'preserve_mass', text: '질량 보존'},
                 {icon: 'fa-reply fa-rotate-180', action: 'change_status', text: '질량 상태', subitems: [
                         {subIcon: 'fa-circle', subIconClass: 'txt-color txt-color-gray', subAction: 'status_fresh', subText: '1단계 (정상)'},
@@ -193,11 +197,54 @@ define([
      * @param disabledOptions
      * @returns {*}
      */
-    let prepareMenu = (menuElement, hiddenOptions, activeOptions, disabledOptions) => {
+    /**
+     * set the (trailing) text label of a menu entry while keeping its icon
+     * @param liElement DOM <li>
+     * @param label
+     */
+    let setMenuItemLabel = (liElement, label) => {
+        let aElement = liElement.querySelector(':scope > a');
+        if(!aElement){
+            return;
+        }
+        let textNode = aElement.lastChild;
+        if(textNode && textNode.nodeType === Node.TEXT_NODE){
+            textNode.textContent = ' ' + label;
+        }
+    };
+
+    let prepareMenu = (menuElement, hiddenOptions, activeOptions, disabledOptions, labelOptions = {}) => {
         let menuLiElements = menuElement.find('li');
 
         // reset all menu entries
         menuLiElements.removeClass('active').removeClass('disabled').show();
+
+        // reset/apply dynamic text labels -----------------------------------------------------------------------------
+        // -> menu DOM is reused across opens, so labels must be restored to their default each time
+        menuLiElements.each(function(){
+            let liElement = this;
+            let aElement = liElement.querySelector(':scope > a');
+            if(!aElement){
+                return;
+            }
+            let action = aElement.getAttribute('data-action');
+
+            // remember default label once
+            if($(liElement).data('defaultLabel') === undefined){
+                let textNode = aElement.lastChild;
+                $(liElement).data('defaultLabel', (textNode && textNode.nodeType === Node.TEXT_NODE) ? textNode.textContent : '');
+            }
+
+            if(action && Object.prototype.hasOwnProperty.call(labelOptions, action)){
+                setMenuItemLabel(liElement, labelOptions[action]);
+            }else{
+                // restore default
+                let textNode = aElement.lastChild;
+                if(textNode && textNode.nodeType === Node.TEXT_NODE){
+                    textNode.textContent = $(liElement).data('defaultLabel');
+                }
+            }
+        });
 
         // hide specific menu entries
         for(let action of hiddenOptions){
@@ -249,8 +296,8 @@ define([
         // -> this happens if menu re-opens without closing (2x right click)
         menuElement.off('click.contextMenuSelect', 'li');
 
-        // hide/activate/disable
-        menuElement = prepareMenu(menuElement, menuConfig.hidden, menuConfig.active, menuConfig.disabled);
+        // hide/activate/disable/label
+        menuElement = prepareMenu(menuElement, menuConfig.hidden, menuConfig.active, menuConfig.disabled, menuConfig.labels || {});
 
         let {left, openSubLeft} = getMenuLeftCoordinate(e, menuElement.width());
         let {top} = getMenuTopCoordinate(e, menuElement.height());
@@ -298,7 +345,8 @@ define([
         'selectCallback': null,
         'hidden': [],
         'active': [],
-        'disabled': []
+        'disabled': [],
+        'labels': {}    // dynamic text overrides per action -> { action: 'new label' }
     });
 
     return {

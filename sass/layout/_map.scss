@@ -788,7 +788,8 @@ $mapBubbleWidth:        30px;
   .pf-map-connection-wh-fresh,
   .pf-map-connection-wh-reduced,
   .pf-map-connection-wh-critical,
-  .pf-map-connection-wh-eol{
+  .pf-map-connection-wh-eol,
+  .pf-map-connection-wh-super-eol{
     z-index: 70;
   }
 
@@ -796,6 +797,14 @@ $mapBubbleWidth:        30px;
 
     path:first-child{
       stroke: $pink-dark;
+    }
+  }
+
+  // "super EOL" (collapse within ~1h) -> declared after wh-eol so it overrides the stroke
+  .pf-map-connection-wh-super-eol {
+
+    path:first-child{
+      stroke: $red-scarlet;
     }
   }
 
@@ -934,6 +943,10 @@ $mapBubbleWidth:        30px;
   .eol{
     background-color: $gray;
     color: $pink-dark;
+
+    &.super-eol{
+      color: $red-scarlet;
+    }
   }
 
   // Arrow overlays ===================================================================================================

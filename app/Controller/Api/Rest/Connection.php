@@ -105,6 +105,11 @@ class Connection extends AbstractRestController {
                             $connection->setAutoScopeAndType();
                         }
 
+                        // reset "super EOL" countdown timer (re-stamp eolUpdated) if requested
+                        if(!empty($requestData['eolReset'])){
+                            $connection->resetSuperEol();
+                        }
+
                         if($connection->save($activeCharacter)){
                             $connectionData = $connection->getData();
 

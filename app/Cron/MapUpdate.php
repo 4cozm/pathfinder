@@ -142,6 +142,78 @@ class MapUpdate extends AbstractCron {
     }
 
     /**
+     * convert EOL connections to "super EOL" once they are within "super EOL" window of auto deletion
+     * (i.e. less than EXPIRE_CONNECTIONS_SUPER_EOL seconds left until deleteEolConnections removes them)
+     * -> only on maps with "deleteEolConnections" enabled (same gate as deleteEolConnections()),
+     *    so the countdown stays meaningful (connection actually gets deleted ~1h later)
+     * >> php index.php "/cron/convertSuperEolConnections"
+     * @param \Base $f3
+     * @throws \Exception
+     */
+    function convertSuperEolConnections(\Base $f3){
+        $this->logStart(__FUNCTION__, false);
+        $eolExpire   = (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_EOL');
+        $superWindow = (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_SUPER_EOL');
+
+        $total = 0;
+        $count = 0;
+        if($eolExpire > 0 && $superWindow > 0 && $superWindow < $eolExpire){
+            // seconds an EOL connection must already exist before it becomes "super EOL"
+            $convertAfter = $eolExpire - $superWindow;
+
+            if($pfDB = $f3->DB->getDB('PF')){
+                $sql = "SELECT
+                    `con`.`id`
+                FROM
+                  `connection` `con` INNER JOIN
+                  `map` ON
+                    `map`.`id` = `con`.`mapId`
+                WHERE
+                  `map`.`deleteEolConnections` = :deleteEolConnections AND
+                  `con`.`type` LIKE :eol AND
+                  `con`.`type` NOT LIKE :superEol AND
+                  `con`.`eolUpdated` IS NOT NULL AND
+                  TIMESTAMPDIFF(SECOND, `con`.`eolUpdated`, NOW() ) > :convert_after
+            ";
+
+                $connectionsData = $pfDB->exec($sql, [
+                    'deleteEolConnections' => 1,
+                    'eol' => '%wh_eol%',
+                    'superEol' => '%wh_super_eol%',
+                    'convert_after' => $convertAfter
+                ]);
+
+                if($connectionsData){
+                    $total = count($connectionsData);
+                    /**
+                     * @var $connection Pathfinder\ConnectionModel
+                     */
+                    $connection = Pathfinder\AbstractPathfinderModel::getNew('ConnectionModel');
+                    foreach($connectionsData as $data){
+                        $connection->getById( (int)$data['id'] );
+                        if($connection->valid()){
+                            $types = (array)$connection->type;
+                            if(in_array('wh_eol', $types) && !in_array('wh_super_eol', $types)){
+                                $types[] = 'wh_super_eol';
+                                $connection->type = $types;
+                                // system-driven change -> no user context for activity logging
+                                $connection->setActivityLogging(false);
+                                $connection->save();
+                                $count++;
+                            }
+                        }
+                        $connection->reset();
+                    }
+                }
+            }
+        }
+
+        $importCount = $total;
+
+        $this->logEnd(__FUNCTION__, $total, $count, $importCount);
+    }
+
+    /**
      * delete expired WH connections after max lifetime for wormholes is reached
      * >> php index.php "/cron/deleteExpiredConnections"
      * @param \Base $f3

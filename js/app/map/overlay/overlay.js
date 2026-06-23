@@ -484,6 +484,11 @@ define([
                     let serverDate = Util.getServerTime();
 
                     for(let connection of connections){
+                        // "super EOL" connections already show a permanent countdown timer -> skip hover label
+                        if(connection.hasType('wh_super_eol')){
+                            continue;
+                        }
+
                         let eolTimestamp = connection.getParameter('eolUpdated');
                         let eolDate = Util.convertTimestampToServerTime(eolTimestamp);
                         let diff = Util.getTimeDiffParts(eolDate, serverDate);
@@ -605,6 +610,87 @@ define([
         }
         updateChart(100);
         task.reset();
+        task.start();
+    };
+
+    /**
+     * format remaining seconds into an approximate Korean countdown label
+     * -> "약 30분 53초 남음" (manual human toggle -> low accuracy -> "약" prefix)
+     * @param remainingSec
+     * @returns {string}
+     */
+    let formatSuperEolRemaining = remainingSec => {
+        if(remainingSec <= 0){
+            return '약 곧 붕괴';
+        }
+        let days = Math.floor(remainingSec / (24 * 60 * 60));
+        let left = remainingSec - days * 24 * 60 * 60;
+        let hours = Math.floor(left / (60 * 60));
+        left = left - hours * 60 * 60;
+        let min = Math.floor(left / 60);
+        let sec = left - min * 60;
+
+        let label = '약 ';
+        if(days){ label += days + '일 '; }
+        if(hours){ label += hours + '시간 '; }
+        if(min){ label += min + '분 '; }
+        label += sec + '초 남음';
+        return label;
+    };
+
+    /**
+     * start (once) the "super EOL" countdown timer task for a map
+     * -> permanently refreshes the timer label overlay on all "wh_super_eol" connections (every second)
+     * @param map
+     */
+    let startSuperEolTimer = map => {
+        if(!map){
+            return;
+        }
+        let mapContainer = $(map.getContainer());
+        let mapId = parseInt(mapContainer.data('id')) || 0;
+        let taskName = `superEolTimer_${mapId}`;
+
+        // stop any stale task for this mapId (e.g. map was closed & reopened -> new instance/container)
+        // -> always (re)bind the task to the current map instance/container
+        let existingTask = Cron.get(taskName);
+        if(existingTask){
+            existingTask.stop();
+        }
+
+        let eolExpire = (Init.connectionExpire && Init.connectionExpire.eol) || 15300;
+
+        let task = Cron.new(taskName, {precision: 'seconds', interval: 1, timeout: 200});
+        task.task = () => {
+            // stop task if map no longer exists in DOM
+            if(!mapContainer.parent().length){
+                task.stop();
+                return;
+            }
+
+            let connections = MapUtil.searchConnectionsByScopeAndType(map, 'wh', ['wh_super_eol']);
+            if(!connections.length){
+                return;
+            }
+
+            let serverDate = Util.getServerTime();
+            for(let connection of connections){
+                let overlay = connection.getOverlay(MapOverlayUtil.config.connectionOverlaySuperEolId);
+                if(!overlay){
+                    continue;
+                }
+
+                let eolTimestamp = connection.getParameter('eolUpdated');
+                let remainingSec = 0;
+                if(eolTimestamp){
+                    let eolDate = Util.convertTimestampToServerTime(eolTimestamp);
+                    let deleteDate = new Date(eolDate.getTime() + eolExpire * 1000);
+                    remainingSec = Math.floor((deleteDate.getTime() - serverDate.getTime()) / 1000);
+                }
+
+                overlay.setLabel('<i class="fas fa-fw fa-hourglass-end"></i>&nbsp;' + formatSuperEolRemaining(remainingSec));
+            }
+        };
         task.start();
     };
 
@@ -893,6 +979,7 @@ define([
         hideInfoSignatureOverlays,
         toggleInfoSystemRegion,
         updateZoomOverlay,
-        initMapDebugOverlays
+        initMapDebugOverlays,
+        startSuperEolTimer
     };
 });

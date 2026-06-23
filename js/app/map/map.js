@@ -766,11 +766,31 @@ define([
                     }
                 });
                 break;
-            case 'preserve_mass':   // set "preserve mass
-            case 'wh_eol':          // set "end of life"
+            case 'preserve_mass':   // set "preserve mass"
                 MapOverlayUtil.getMapOverlay(mapElement, 'timer').startMapUpdateCounter();
                 MapUtil.toggleConnectionType(connection, action);
                 MapUtil.markAsChanged(connection);
+                break;
+            case 'wh_eol':          // set "end of life"
+                MapOverlayUtil.getMapOverlay(mapElement, 'timer').startMapUpdateCounter();
+                if(connection.hasType('wh_eol')){
+                    // turning EOL off -> "super EOL" can not exist without "EOL" -> drop both
+                    MapUtil.removeConnectionTypes(connection, ['wh_eol', 'wh_super_eol']);
+                }else{
+                    MapUtil.addConnectionTypes(connection, ['wh_eol']);
+                }
+                MapUtil.markAsChanged(connection);
+                break;
+            case 'wh_super_eol':    // set "super end of life" (collapse within ~1h)
+                if(connection.hasType('wh_super_eol')){
+                    // already "super EOL" -> reset the ~1h countdown timer (re-confirm it's still alive)
+                    resetSuperEol(connection);
+                }else{
+                    MapOverlayUtil.getMapOverlay(mapElement, 'timer').startMapUpdateCounter();
+                    // "super EOL" implies "EOL" -> ensure both are set
+                    MapUtil.addConnectionTypes(connection, ['wh_eol', 'wh_super_eol']);
+                    MapUtil.markAsChanged(connection);
+                }
                 break;
             case 'status_fresh':
             case 'status_reduced':
@@ -1057,7 +1077,7 @@ define([
         }
 
         // check for unhandled connection type changes ----------------------------------------------------------------
-        let allToggleTypes = ['wh_eol', 'preserve_mass'];
+        let allToggleTypes = ['wh_eol', 'wh_super_eol', 'preserve_mass'];
         let newTypes = allToggleTypes.intersect(newConnectionData.type.diff(currentConnectionData.type));
         let oldTypes = allToggleTypes.intersect(currentConnectionData.type.diff(newConnectionData.type));
 
@@ -1226,6 +1246,9 @@ define([
                 mapOverlay.updateOverlayIcon('systemPopover', 'show');
                 mapOverlay.updateOverlayIcon('connection', 'show');
                 mapOverlay.updateOverlayIcon('connectionEol', 'show');
+
+                // start permanent "super EOL" countdown timer for this map
+                MapOverlay.startSuperEolTimer(mapConfig.map);
 
                 resolve({
                     action: 'newMapElement',
@@ -2003,6 +2026,40 @@ define([
     });
 
     /**
+     * reset the "super EOL" countdown timer for a connection
+     * -> re-stamps "eolUpdated" server side so a fresh ~1h countdown starts (re-confirm hole is still alive)
+     * @param connection
+     */
+    let resetSuperEol = connection => {
+        if(!(connection instanceof jsPlumb.Connection)){
+            return;
+        }
+
+        let map = connection._jsPlumb.instance;
+        let mapContainer = $(map.getContainer());
+        let mapId = mapContainer.data('id');
+
+        let connectionData = MapUtil.getDataByConnection(connection);
+        connectionData.mapId = mapId;
+        connectionData.disableAutoScope = true;
+        connectionData.eolReset = true;
+
+        MapOverlayUtil.getMapOverlay(mapContainer, 'timer').startMapUpdateCounter();
+
+        Util.request('PUT', 'Connection', [], connectionData, {
+            connection: connection,
+            mapId: mapId
+        }).then(payload => {
+            let newConnectionData = payload.data;
+            if(!$.isEmptyObject(newConnectionData)){
+                let connection = updateConnection(payload.context.connection, newConnectionData);
+                updateConnectionCache(payload.context.mapId, connection);
+                Util.showNotify({title: '슈퍼 EOL 타이머 초기화', text: '카운트다운을 다시 시작합니다 (약 1시간)', type: 'success'});
+            }
+        }).catch(console.warn);
+    };
+
+    /**
      * get context menu config for a map component (e.g. system, connection,..)
      * @param component
      * @returns {Promise<any>}
@@ -2100,7 +2157,7 @@ define([
 
             // hidden menu actions
             if(scope === 'abyssal'){
-                options.hidden.push('wh_eol');
+                options.hidden.push('wh_eol_change');
                 options.hidden.push('preserve_mass');
                 options.hidden.push('change_status');
                 options.hidden.push('wh_jump_mass_change');
@@ -2108,14 +2165,14 @@ define([
                 options.hidden.push('change_scope');
                 options.hidden.push('separator');
             }else if(scope === 'stargate'){
-                options.hidden.push('wh_eol');
+                options.hidden.push('wh_eol_change');
                 options.hidden.push('preserve_mass');
                 options.hidden.push('change_status');
                 options.hidden.push('wh_jump_mass_change');
 
                 options.hidden.push('scope_stargate');
             }else if(scope === 'jumpbridge'){
-                options.hidden.push('wh_eol');
+                options.hidden.push('wh_eol_change');
                 options.hidden.push('preserve_mass');
                 options.hidden.push('change_status');
                 options.hidden.push('wh_jump_mass_change');
@@ -2126,9 +2183,18 @@ define([
             }
 
             // active menu actions
-            if(connection.hasType('wh_eol') === true){
+            let isEol = connection.hasType('wh_eol') === true;
+            let isSuperEol = connection.hasType('wh_super_eol') === true;
+            if(isEol){
                 options.active.push('wh_eol');
             }
+            if(isSuperEol){
+                options.active.push('wh_super_eol');
+            }
+
+            // dynamic EOL menu labels based on current connection state
+            options.labels['wh_eol'] = isEol ? 'EOL 해제' : '일반 EOL';
+            options.labels['wh_super_eol'] = isSuperEol ? '슈퍼 EOL 갱신' : '슈퍼 EOL (1시간 이내)';
             if(connection.hasType('preserve_mass') === true){
                 options.active.push('preserve_mass');
             }

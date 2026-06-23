@@ -27,6 +27,7 @@ define([
         connectionOverlayArrowId: 'pf-map-connection-arrow-overlay',                        // connection Arrows overlay ID (jsPlumb)
         connectionOverlayWhId: 'pf-map-connection-wh-overlay',                              // connection WH overlay ID (jsPlumb)
         connectionOverlayEolId: 'pf-map-connection-eol-overlay',                            // connection EOL overlay ID (jsPlumb)
+        connectionOverlaySuperEolId: 'pf-map-connection-super-eol-overlay',                  // connection "super EOL" timer overlay ID (jsPlumb)
 
         debugOverlayId: 'pf-map-debug-overlay',                                             // connection/endpoint overlay ID (jsPlumb)
 

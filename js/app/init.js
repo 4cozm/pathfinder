@@ -380,6 +380,19 @@ define([], () => {
             wh_eol: {
                 cssClass: 'pf-map-connection-wh-eol'
             },
+            wh_super_eol: {
+                cssClass: 'pf-map-connection-wh-super-eol',
+                overlays: [
+                    ['Label',
+                        {
+                            label: '<i class="fas fa-fw fa-hourglass-end"></i>',
+                            id: 'pf-map-connection-super-eol-overlay',
+                            // 0.2 -> clear of save-mass (0.35), signature arrow / process spinner (0.5), jump-mass (0.65)
+                            cssClass: ['pf-map-component-overlay', 'eol', 'super-eol'].join(' '),
+                            location: 0.2
+                        }]
+                ]
+            },
             wh_fresh: {
                 cssClass: 'pf-map-connection-wh-fresh'
             },

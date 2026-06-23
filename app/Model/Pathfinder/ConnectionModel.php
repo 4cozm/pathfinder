@@ -115,6 +115,7 @@ class ConnectionModel extends AbstractMapTrackingModel {
         'wh_jump_mass_xl',
         // other types
         'wh_eol',
+        'wh_super_eol',
         'preserve_mass'
     ];
 
@@ -164,18 +165,59 @@ class ConnectionModel extends AbstractMapTrackingModel {
         // -> reset keys! otherwise JSON format results in object and not in array
         $type = array_values(array_intersect(array_unique((array)$type), self::$connectionTypeWhitelist));
 
+        $hadEol         = in_array('wh_eol', (array)$this->type); // $this->type == null for new connection! (e.g. map import)
+        $hadSuperEol    = in_array('wh_super_eol', (array)$this->type);
+
         // set EOL timestamp
         if( !in_array('wh_eol', $type) ){
+            // no EOL at all -> "super EOL" can not exist without "EOL" -> drop it + clear timestamp
+            $type = array_values(array_diff($type, ['wh_super_eol']));
             $this->eolUpdated = null;
-        }elseif(
-            in_array('wh_eol', $type) &&
-            !in_array('wh_eol', (array)$this->type) // $this->type == null for new connection! (e.g. map import)
-        ){
+        }else{
             // connection EOL status change
-            $this->touch('eolUpdated');
+            if( !$hadEol ){
+                $this->touch('eolUpdated');
+            }
+
+            // newly "super EOL" (collapse within ~1h) -> backdate "eolUpdated" so that at most
+            // EXPIRE_CONNECTIONS_SUPER_EOL remains until the existing "deleteEolConnections" cron removes it.
+            // This unifies both paths (manual toggle & auto-conversion) to "delete ~1h after going super".
+            if( in_array('wh_super_eol', $type) && !$hadSuperEol ){
+                $f3 = self::getF3();
+                $eolExpire   = (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_EOL');
+                $superWindow = (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_SUPER_EOL');
+                if($eolExpire > 0 && $superWindow > 0 && $superWindow < $eolExpire){
+                    $latestAllowed = time() - ($eolExpire - $superWindow);
+                    $currentEol = $this->eolUpdated ? strtotime($this->eolUpdated) : time();
+                    if($currentEol > $latestAllowed){
+                        $this->eolUpdated = date('Y-m-d H:i:s', $latestAllowed);
+                    }
+                }
+            }
         }
 
         return $type;
+    }
+
+    /**
+     * reset the "super EOL" countdown timer
+     * -> re-stamp "eolUpdated" so that ~EXPIRE_CONNECTIONS_SUPER_EOL remains again (fresh ~1h countdown)
+     * -> only valid while the connection is currently "super EOL"
+     * @return bool whether the timer was reset
+     */
+    public function resetSuperEol() : bool {
+        if( !in_array('wh_super_eol', (array)$this->type) ){
+            return false;
+        }
+
+        $f3 = self::getF3();
+        $eolExpire   = (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_EOL');
+        $superWindow = (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_SUPER_EOL');
+        if($eolExpire > 0 && $superWindow > 0 && $superWindow < $eolExpire){
+            $this->eolUpdated = date('Y-m-d H:i:s', time() - ($eolExpire - $superWindow));
+            return true;
+        }
+        return false;
     }
 
     /**

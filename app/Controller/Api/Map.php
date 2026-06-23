@@ -61,6 +61,12 @@ class Map extends Controller\AccessController {
             // static program data ------------------------------------------------------------------------------------
             $return->timer = Config::getPathfinderData('timer');
 
+            // connection expire timings (used e.g. for "super EOL" countdown on the client) ---------------------------
+            $return->connectionExpire = (object)[
+                'eol'       => (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_EOL'),
+                'superEol'  => (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_SUPER_EOL')
+            ];
+
             // get all available map types ----------------------------------------------------------------------------
             $mapType = Pathfinder\AbstractPathfinderModel::getNew('MapTypeModel');
             $rows = $mapType->find('active = 1');
