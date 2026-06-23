@@ -185,6 +185,9 @@
                                 <div class="panel-heading">
                                     <strong>{{ @i }}. {{ @acl->name }}</strong>
                                     <img class="pf-character-image pull-right" src="{{ @tplImage->eveSrcUrl('characters', @acl->id, 32) }}" alt="{{ @acl->name }}"/>
+                                    <check if="{{ !@acl->nameResolved }}">
+                                        <small class="text-muted" style="display:block; font-weight:normal; font-size:11px; margin-top:2px;">패파 1회 로그인 이후 닉네임이 표기됩니다</small>
+                                    </check>
                                 </div>
                                 <div class="panel-body">
 

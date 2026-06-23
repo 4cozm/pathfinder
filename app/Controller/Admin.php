@@ -540,9 +540,13 @@ class Admin extends Controller{
                 $charId = (int)$row->characterId;
                 $char = CharacterModel::getNew('CharacterModel');
                 $char->load(['id = ?', $charId]);
+                // 로컬 character 테이블에 행이 없으면(=이 패파에 아직 로그인 이력 없음) 이름을 모른다.
+                // 이름은 매 렌더마다 즉석 조회하므로, 해당 캐릭터가 1회 로그인하면 자동으로 닉네임으로 바뀐다.
+                $nameResolved = !$char->dry();
                 $data->characterAcls[] = (object)[
-                    'id'        => $charId,
-                    'name'      => (!$char->dry()) ? $char->name : ('ID: ' . $charId),
+                    'id'           => $charId,
+                    'name'         => $nameResolved ? $char->name : ('ID: ' . $charId),
+                    'nameResolved' => $nameResolved,
                     'canLogin'  => (bool)$row->canLogin,
                     'canEdit'   => (bool)$row->canEdit,
                     'expires'   => $row->expires ? : '',
