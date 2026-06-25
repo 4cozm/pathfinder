@@ -1,21 +1,18 @@
 // TZ activity strip (map header) =====================================================================================
 // -> shows which timezone (region) is most active right now (global, UTC based)
 
-#pf-head {
-  position: relative; // anchor for centered TZ strip
-}
-
+// dedicated full-width row directly below the header
+// -> visible on every screen size (incl. narrow / portrait), no header collision
 .pf-head-tz {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  z-index: 1; // keep below header dropdowns/popovers
+
+  height: 22px;
+  padding: 0 10px;
+  background: $gray-darkest;
+  border-bottom: 1px solid $black;
 
   .pf-head-tz-toggle {
     flex: 0 0 auto;
@@ -43,6 +40,7 @@
   .pf-head-tz-strip {
     flex: 0 0 auto;
     width: 280px;
+    max-width: calc(100vw - 70px); // shrink on very narrow / portrait screens
     height: 16px;
 
     display: flex;

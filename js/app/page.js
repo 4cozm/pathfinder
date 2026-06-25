@@ -499,11 +499,15 @@ define([
                 userCharacterImageClass:    config.userCharacterImageClass,
                 usersActiveClass:           config.headActiveUsersClass,
                 userLocationId:             Util.config.headUserLocationId,
-                mapTrackingId:              Util.config.headMapTrackingId,
-                tzStripId:                  Util.config.headTzStripId
+                mapTrackingId:              Util.config.headMapTrackingId
             };
 
             pageEl.insertAdjacentHTML('afterbegin', Mustache.render(TplHead, moduleData));
+
+            // TZ activity strip -> dedicated full-width row right below the header
+            // (visible on narrow / portrait monitors without colliding with header buttons)
+            let headEl = document.getElementById(config.pageHeaderId);
+            headEl.insertAdjacentHTML('afterend', `<div id="${Util.config.headTzStripId}" class="pf-head-tz"></div>`);
 
             // init header --------------------------------------------------------------------------------------------
 
