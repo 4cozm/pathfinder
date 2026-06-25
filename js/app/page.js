@@ -14,6 +14,7 @@ define([
     'slidebars',
     'text!templates/layout/header_map.html',
     'text!templates/layout/footer_map.html',
+    'layout/header_tz',
     'dialog/notification',
     'dialog/stats',
     'dialog/map_info',
@@ -27,7 +28,7 @@ define([
     'dialog/credit',
     'xEditable',
     'app/module_map'
-], ($, Init, Util, Counter, Logging, Mustache, MapUtil, MapContextMenu, SlideBars, TplHead, TplFooter) => {
+], ($, Init, Util, Counter, Logging, Mustache, MapUtil, MapContextMenu, SlideBars, TplHead, TplFooter, HeaderTz) => {
 
     'use strict';
 
@@ -498,7 +499,8 @@ define([
                 userCharacterImageClass:    config.userCharacterImageClass,
                 usersActiveClass:           config.headActiveUsersClass,
                 userLocationId:             Util.config.headUserLocationId,
-                mapTrackingId:              Util.config.headMapTrackingId
+                mapTrackingId:              Util.config.headMapTrackingId,
+                tzStripId:                  Util.config.headTzStripId
             };
 
             pageEl.insertAdjacentHTML('afterbegin', Mustache.render(TplHead, moduleData));
@@ -603,6 +605,9 @@ define([
 
                 Util.showNotify({title: 'Map tracking: ' + tracking, text: trackingText, type: trackingType}, false);
             });
+
+            // TZ activity strip ("most active timezone")
+            HeaderTz.initTzStrip(document.getElementById(Util.config.headTzStripId));
 
             // init all tooltips
             initHeaderTooltips($('#' + config.pageHeaderId));

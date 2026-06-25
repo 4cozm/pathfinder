@@ -54,6 +54,7 @@ define([
         // head
         headMapTrackingId: 'pf-head-map-tracking',                              // id for "map tracking" toggle (checkbox)
         headUserLocationId: 'pf-head-user-location',                            // id for "location" breadcrumb
+        headTzStripId: 'pf-head-tz',                                            // id for "TZ activity" strip (most active timezone)
 
         // menu
         menuButtonFullScreenId: 'pf-menu-button-fullscreen',                    // id for menu button "fullScreen"
