@@ -11,8 +11,8 @@
 
   height: 22px;
   padding: 0 10px;
-  background: $gray-darkest;
-  border-bottom: 1px solid $black;
+  // blend the row into its neighbours: header color (top) -> page background (bottom)
+  background: linear-gradient(to bottom, $gray-darker 0%, $bg-color 100%);
 
   .pf-head-tz-toggle {
     flex: 0 0 auto;
@@ -39,7 +39,7 @@
 
   .pf-head-tz-strip {
     flex: 0 0 auto;
-    width: 280px;
+    width: 460px;
     max-width: calc(100vw - 70px); // shrink on very narrow / portrait screens
     height: 16px;
 
