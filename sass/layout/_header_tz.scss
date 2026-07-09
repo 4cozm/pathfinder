@@ -1,0 +1,120 @@
+// TZ activity strip (map header) =====================================================================================
+// -> shows which timezone (region) is most active right now (global, UTC based)
+
+// dedicated full-width row directly below the header
+// -> visible on every screen size (incl. narrow / portrait), no header collision
+.pf-head-tz {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  height: 22px;
+  padding: 0 10px;
+  // blend the row into its neighbours: header color (top) -> page background (bottom)
+  background: linear-gradient(to bottom, $gray-darker 0%, $bg-color 100%);
+
+  .pf-head-tz-toggle {
+    flex: 0 0 auto;
+    color: $gray-light;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    opacity: 0.55; // OFF state: dim (population weight disabled)
+    padding: 3px 4px;
+    border-radius: 3px;
+    @include transition(color 0.15s ease-out, opacity 0.15s ease-out, background-color 0.15s ease-out);
+
+    &:hover {
+      color: $teal-lightest;
+      opacity: 1;
+    }
+
+    &.active {
+      color: $green-light; // ON state: enabled
+      opacity: 1;
+      background-color: rgba($green-light, 0.15); // filled pill for clear ON/OFF difference
+    }
+  }
+
+  .pf-head-tz-strip {
+    flex: 0 0 auto;
+    width: 460px;
+    max-width: calc(100vw - 70px); // shrink on very narrow / portrait screens
+    height: 16px;
+
+    display: flex;
+    overflow: hidden;
+    border: 1px solid $gray;
+    border-radius: 3px;
+
+    font-size: 10px;
+    font-weight: bold;
+    @include transition(filter 0.6s ease); // smooth "server intensity" change
+  }
+
+  .pf-head-tz-seg {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+
+    color: $bg-color; // dark text on bright (colored) segment
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: default;
+    @include transition(flex 0.4s ease, opacity 0.3s ease);
+
+    &.top {
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85); // highlight current #1
+    }
+  }
+}
+
+// custom hover tooltip (appended to body -> can overflow header) ------------------------------------------------------
+.pf-head-tz-tip {
+  position: fixed;
+  z-index: 1100; // above header
+  pointer-events: none;
+  opacity: 0;
+  @include transition(opacity 0.12s ease);
+
+  padding: 5px 9px;
+  background: $gray-darkest;
+  border: 1px solid $gray;
+  border-radius: 4px;
+  @include box-shadow(0 6px 18px rgba(0, 0, 0, 0.6));
+
+  font-size: 11px;
+  line-height: 1.5;
+  color: $gray-lighter;
+  white-space: nowrap;
+
+  b {
+    color: $white;
+  }
+
+  .pf-tip-on {
+    color: $green-light;
+  }
+
+  .pf-tip-off {
+    color: $gray-lighter;
+  }
+
+  .pf-tip-code {
+    color: $gray-light;
+  }
+
+  .pf-tip-pct {
+    margin-left: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pf-tip-cnt {
+    margin-left: 6px;
+    color: $teal-lightest;
+    font-variant-numeric: tabular-nums;
+  }
+}

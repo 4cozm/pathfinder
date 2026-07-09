@@ -1,0 +1,381 @@
+<style>
+/* Custom Dark Theme overrides for SpyDetect */
+.pf-spydetect-wrapper .panel {
+    background-color: #2b2b2b;
+    border-color: #444;
+    color: #e2e2e2;
+}
+.pf-spydetect-wrapper .panel-heading {
+    background-color: #1f1f1f !important;
+    border-color: #444 !important;
+    color: #f5f5f5 !important;
+}
+.pf-spydetect-wrapper .panel-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #4fc3f7 !important;
+}
+.pf-spydetect-wrapper table.table {
+    background-color: #222 !important;
+    color: #e2e2e2 !important;
+    border: 1px solid #444 !important;
+    font-size: 14px;
+}
+.pf-spydetect-wrapper table.table th {
+    background-color: #1a1a1a !important;
+    color: #64b5f6 !important;
+    border-color: #444 !important;
+    border-bottom-width: 2px !important;
+    font-size: 15px;
+}
+.pf-spydetect-wrapper table.table td {
+    border-color: #444 !important;
+    vertical-align: middle !important;
+}
+.pf-spydetect-wrapper table.table-striped > tbody > tr:nth-of-type(odd) td {
+    background-color: #2b2b2b !important;
+}
+.pf-spydetect-wrapper table.table-striped > tbody > tr:nth-of-type(even) td {
+    background-color: #222 !important;
+}
+.pf-spydetect-wrapper table.table-striped > tbody > tr:hover td {
+    background-color: #3f3f3f !important;
+}
+
+.pf-spydetect-issuer-head {
+    font-size: 16px !important;
+    font-weight: bold;
+    color: #ffffff !important;
+    background-color: #333 !important;
+    padding: 12px 15px !important;
+    border-radius: 4px;
+    margin-bottom: 0px;
+    border: 1px solid #555 !important;
+    transition: background-color 0.2s;
+}
+.pf-spydetect-issuer-head:hover {
+    background-color: #444 !important;
+}
+.pf-spydetect-issuer-head i.fa-chevron-right, .pf-spydetect-issuer-head i.fa-chevron-down {
+    color: #64b5f6;
+}
+.pf-spydetect-issuer-body {
+    background-color: #1e1e1e !important;
+    padding: 15px !important;
+    border: 1px solid #444;
+    border-top: none;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    margin-bottom: 15px;
+}
+.pf-spydetect-wrapper select,
+.pf-spydetect-wrapper input,
+.pf-spydetect-wrapper button {
+    font-size: 13px;
+}
+.pf-spydetect-wrapper h4 {
+    color: #f5f5f5;
+    font-size: 20px;
+    margin-bottom: 20px;
+}
+.pf-spydetect-wrapper .text-muted {
+    color: #aaa !important;
+}
+</style>
+<section data-base="{{ @BASE }}" class="pf-spydetect-wrapper">
+    <div class="container col-xs-12">
+        <div class="row"></div>
+        <h4><i class="fas fa-fw fa-users-cog"></i>&nbsp;유저 관계도</h4>
+        <div class="row text-center">
+            <div class="col-xs-12 pf-landing-pricing-panel">
+                <div class="panel panel-default pricing-big">
+                    <div class="panel-heading text-left">
+                        <h3 class="panel-title">발급 계정별 발견 캐릭터 (티켓 발급한 계정 → 해당 티켓에서 수집된 캐릭터)</h3>
+                    </div>
+                    <div class="panel-body">
+                        <p class="text-muted small pf-spydetect-loading">목록을 불러오는 중...</p>
+                        <div id="pf-spydetect-issuers" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+<script>
+(function() {
+    var section = document.querySelector('section[data-base]');
+    if (!section) return;
+    var base = section.getAttribute('data-base') || '';
+    if (base && !/\/$/.test(base)) base = base + '/';
+    if (!base) base = '/';
+    var apiRoot = '/';
+    var loading = section.querySelector('.pf-spydetect-loading');
+    var container = document.getElementById('pf-spydetect-issuers');
+
+    function esc(s) {
+        if (s == null || s === '') return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function loadIssuers() {
+        if (!container) return;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', apiRoot + 'admin/spydetect/data', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            if (loading) loading.style.display = 'none';
+            container.style.display = 'block';
+            if (xhr.status >= 400) {
+                try {
+                    var err = JSON.parse(xhr.responseText);
+                    if (err.hint || err.error) {
+                        container.innerHTML = '<p class="text-danger small">' + (err.hint || err.error) + '</p>';
+                    }
+                } catch (e) {}
+                return;
+            }
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.ok && Array.isArray(res.issuers)) {
+                    container.innerHTML = '';
+                    if (res.issuers.length === 0 && res.hint) {
+                        var p = document.createElement('p');
+                        p.className = 'text-muted small';
+                        p.textContent = res.hint;
+                        container.appendChild(p);
+                    }
+                    res.issuers.forEach(function(issuer) {
+                        var issuerId = issuer.issuer_character_id;
+                        var label = (issuer.issuer_name || ('Character ' + issuerId)) + ' (' + issuer.detected_count + ')';
+                        var row = document.createElement('div');
+                        row.className = 'pf-spydetect-issuer-row';
+                        row.setAttribute('data-issuer-id', String(issuerId));
+                        var head = document.createElement('div');
+                        head.className = 'pf-spydetect-issuer-head';
+                        head.style.cursor = 'pointer';
+                        head.innerHTML = '<i class="fas fa-fw fa-chevron-right pf-spydetect-chevron"></i> ' + esc(label);
+                        head.addEventListener('click', function() { toggleIssuer(issuerId, head, row); });
+                        row.appendChild(head);
+                        var body = document.createElement('div');
+                        body.className = 'pf-spydetect-issuer-body';
+                        body.style.display = 'none';
+                        row.appendChild(body);
+                        container.appendChild(row);
+                    });
+                }
+            } catch (e) {}
+        };
+        xhr.send();
+    }
+
+    function toggleIssuer(issuerId, head, row) {
+        var body = row.querySelector('.pf-spydetect-issuer-body');
+        var chevron = row.querySelector('.pf-spydetect-chevron');
+        if (!body) return;
+        if (body.style.display === 'none') {
+            if (!body.hasAttribute('data-loaded')) {
+                loadIssuerCharacters(issuerId, body, function() {
+                    body.setAttribute('data-loaded', '1');
+                    body.style.display = 'block';
+                    if (chevron) chevron.className = 'fas fa-fw fa-chevron-down pf-spydetect-chevron';
+                });
+            } else {
+                body.style.display = 'block';
+                if (chevron) chevron.className = 'fas fa-fw fa-chevron-down pf-spydetect-chevron';
+            }
+        } else {
+            body.style.display = 'none';
+            if (chevron) chevron.className = 'fas fa-fw fa-chevron-right pf-spydetect-chevron';
+        }
+    }
+
+    function loadIssuerCharacters(issuerId, body, done) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', apiRoot + 'admin/spydetect/issuer/' + issuerId + '/characters', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (!res.ok && res.hint) {
+                    body.innerHTML = '<p class="text-danger small" style="padding: 10px; margin: 0;">Error: ' + esc(res.hint) + '</p>';
+                } else if (res.ok && Array.isArray(res.characters)) {
+                    if (res.characters.length === 0) {
+                        body.innerHTML = '<p class="text-muted small" style="padding: 10px; margin: 0;">발견된 캐릭터가 없습니다.</p>';
+                    } else {
+                        var table = document.createElement('table');
+                    table.className = 'table table-striped table-bordered table-condensed';
+                    table.innerHTML =
+                        '<thead><tr><th>character id</th><th>name</th><th>corporation</th><th>updated_at</th><th></th></tr></thead><tbody></tbody>';
+                    var tbody = table.querySelector('tbody');
+                    res.characters.forEach(function(c) {
+                        var tr = document.createElement('tr');
+                        tr.setAttribute('data-character-id', String(c.character_id || ''));
+                        tr.innerHTML =
+                            '<td class="text-right">' + esc(String(c.character_id || '')) + '</td>' +
+                            '<td class="pf-spydetect-name">' + (c.name ? esc(c.name) : '<span class="text-muted">[Unknown: ' + esc(String(c.character_id || '')) + ']</span>') + '</td>' +
+                            '<td class="pf-spydetect-corp">' + (c.corporation_name ? esc(c.corporation_name) : '<span class="text-muted">—</span>') + '</td>' +
+                            '<td class="pf-spydetect-updated">' + esc(String(c.updated_at || '')) + '</td>' +
+                            '<td><button type="button" class="btn btn-xs btn-default pf-spydetect-enrich">조회</button> ' +
+                            '<button type="button" class="btn btn-xs btn-danger pf-spydetect-delete">삭제</button></td>';
+                        tbody.appendChild(tr);
+                    });
+                    var toolbar = document.createElement('div');
+                    toolbar.className = 'pf-spydetect-toolbar';
+                    toolbar.style.marginBottom = '10px';
+                    var delaySec = 2;
+                    function etaText(n) {
+                        if (n <= 0) return '';
+                        var s = n * delaySec;
+                        if (s >= 60) return '약 ' + Math.ceil(s / 60) + '분';
+                        return '약 ' + s + '초';
+                    }
+                    function emptyIds() {
+                        var rows = body.querySelectorAll('tr[data-character-id]');
+                        var ids = [];
+                        rows.forEach(function(tr) {
+                            var nameCell = tr.querySelector('.pf-spydetect-name');
+                            var corpCell = tr.querySelector('.pf-spydetect-corp');
+                            var nameEmpty = !nameCell || nameCell.textContent.indexOf('Unknown') !== -1 || nameCell.textContent.trim() === '';
+                            var corpEmpty = !corpCell || corpCell.textContent.indexOf('—') !== -1 || corpCell.textContent.trim() === '';
+                            if (nameEmpty || corpEmpty) ids.push(tr.getAttribute('data-character-id'));
+                        });
+                        return ids;
+                    }
+                    function allIds() {
+                        var rows = body.querySelectorAll('tr[data-character-id]');
+                        var ids = [];
+                        rows.forEach(function(tr) { ids.push(tr.getAttribute('data-character-id')); });
+                        return ids;
+                    }
+                    function updateButtonLabels() {
+                        var eCount = emptyIds().length;
+                        var aCount = allIds().length;
+                        btnEmpty.textContent = '빈 유저 전체 조회 (' + eCount + '명, ' + etaText(eCount) + ')';
+                        btnAll.textContent = '모든 유저 조회 (' + aCount + '명, ' + etaText(aCount) + ')';
+                    }
+                    var btnEmpty = document.createElement('button');
+                    btnEmpty.type = 'button';
+                    btnEmpty.className = 'btn btn-xs btn-default pf-spydetect-batch-empty';
+                    var btnAll = document.createElement('button');
+                    btnAll.type = 'button';
+                    btnAll.className = 'btn btn-xs btn-default pf-spydetect-batch-all';
+                    var progressSpan = document.createElement('span');
+                    progressSpan.className = 'pf-spydetect-progress text-muted small';
+                    progressSpan.style.marginLeft = '10px';
+                    toolbar.appendChild(btnEmpty);
+                    toolbar.appendChild(btnAll);
+                    toolbar.appendChild(progressSpan);
+                    updateButtonLabels();
+                    body.appendChild(toolbar);
+                    body.appendChild(table);
+                    } // end else for characters empty check
+                    body.setAttribute('data-issuer-id', String(issuerId));
+                    body.querySelectorAll('.pf-spydetect-enrich').forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            var tr = btn.closest('tr');
+                            var id = tr ? tr.getAttribute('data-character-id') : null;
+                            if (id) enrichOne(id, tr, btn);
+                        });
+                    });
+                    body.querySelectorAll('.pf-spydetect-delete').forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            var tr = btn.closest('tr');
+                            var cid = tr ? tr.getAttribute('data-character-id') : null;
+                            var iid = body.getAttribute('data-issuer-id');
+                            if (cid && iid) deleteOne(parseInt(iid, 10), parseInt(cid, 10), tr, btn);
+                        });
+                    });
+                    function runBatch(characterIds) {
+                        if (characterIds.length === 0) return;
+                        btnEmpty.disabled = true;
+                        btnAll.disabled = true;
+                        var total = characterIds.length;
+                        for (var i = 0; i < total; i++) {
+                            (function(idx) {
+                                setTimeout(function() {
+                                    var id = characterIds[idx];
+                                    var tr = body.querySelector('tr[data-character-id="' + id + '"]');
+                                    var enrichBtn = tr ? tr.querySelector('.pf-spydetect-enrich') : null;
+                                    if (tr && enrichBtn) enrichOne(id, tr, enrichBtn);
+                                    var remaining = total - idx - 1;
+                                    progressSpan.textContent = (idx + 1) + ' / ' + total + ' 완료' + (remaining > 0 ? ', 약 ' + (remaining * delaySec) + '초 남음' : '');
+                                    if (idx === total - 1) {
+                                        setTimeout(function() {
+                                            progressSpan.textContent = '완료';
+                                            btnEmpty.disabled = false;
+                                            btnAll.disabled = false;
+                                            updateButtonLabels();
+                                        }, 500);
+                                    }
+                                }, idx * (delaySec * 1000));
+                            })(i);
+                        }
+                    }
+                    btnEmpty.addEventListener('click', function() {
+                        var ids = emptyIds();
+                        if (ids.length === 0) { progressSpan.textContent = '빈 유저 없음'; return; }
+                        progressSpan.textContent = '0 / ' + ids.length + ' 완료, 약 ' + (ids.length * delaySec) + '초 남음';
+                        runBatch(ids);
+                    });
+                    btnAll.addEventListener('click', function() {
+                        var ids = allIds();
+                        if (ids.length === 0) { progressSpan.textContent = '대상 없음'; return; }
+                        progressSpan.textContent = '0 / ' + ids.length + ' 완료, 약 ' + (ids.length * delaySec) + '초 남음';
+                        runBatch(ids);
+                    });
+                }
+            } catch (e) {}
+            if (typeof done === 'function') done();
+        };
+        xhr.onerror = function() { if (typeof done === 'function') done(); };
+        xhr.send();
+    }
+
+    function enrichOne(characterId, tr, btn) {
+        if (!tr || !btn) return;
+        btn.disabled = true;
+        btn.textContent = '...';
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', apiRoot + 'admin/spydetect/enrich/' + characterId, true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            btn.disabled = false;
+            btn.textContent = '조회';
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.ok) {
+                    var nameCell = tr.querySelector('.pf-spydetect-name');
+                    var corpCell = tr.querySelector('.pf-spydetect-corp');
+                    var updatedCell = tr.querySelector('.pf-spydetect-updated');
+                    if (nameCell) nameCell.textContent = res.name || '—';
+                    if (corpCell) corpCell.textContent = res.corporation_name || '—';
+                    if (updatedCell) updatedCell.textContent = res.updated_at || '';
+                }
+            } catch (e) {}
+        };
+        xhr.onerror = function() { btn.disabled = false; btn.textContent = '조회'; };
+        xhr.send();
+    }
+
+    function deleteOne(issuerId, characterId, tr, btn) {
+        if (!tr || !btn) return;
+        btn.disabled = true;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', apiRoot + 'admin/spydetect/issuer/' + issuerId + '/character/' + characterId + '/delete', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function() {
+            btn.disabled = false;
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.ok && tr.parentNode) tr.parentNode.removeChild(tr);
+            } catch (e) {}
+        };
+        xhr.onerror = function() { btn.disabled = false; };
+        xhr.send();
+    }
+
+    loadIssuers();
+})();
+</script>
