@@ -90,6 +90,12 @@ class CharacterModel extends AbstractPathfinderModel {
     const ESI_LOCATION_CACHE_TTL        = 5;
 
     /**
+     * fallback for PATHFINDER.CACHE.CHARACTER_LOG_INACTIVE (seconds)
+     * -> keep in sync with Cron\CharacterUpdate::CHARACTER_LOG_INACTIVE
+     */
+    const CHARACTER_LOG_INACTIVE        = 180;
+
+    /**
      * character authorization status
      * @var array
      */
@@ -1206,6 +1212,16 @@ class CharacterModel extends AbstractPathfinderModel {
     }
 
     /**
+     * seconds after which a 'character log' counts as inactive
+     * -> same threshold the cleanup cron (Cron\CharacterUpdate) uses for deleting logs
+     * @return int
+     */
+    public static function getLogInactiveTime() : int {
+        $inactiveTime = (int)self::getF3()->get('PATHFINDER.CACHE.CHARACTER_LOG_INACTIVE');
+        return ($inactiveTime > 0) ? $inactiveTime : self::CHARACTER_LOG_INACTIVE;
+    }
+
+    /**
      * add new 'character log' history entry
      * @param CharacterLogModel $characterLog
      * @param string $action
@@ -1217,7 +1233,10 @@ class CharacterModel extends AbstractPathfinderModel {
         ){
             $task = 'add';
             $mapIds = [];
+            $gap = null;
             $historyLog = $characterLog::toArray($characterLog->getData());
+            /** @var object{updated:mixed} $characterLog */
+            $stamp = strtotime($characterLog->updated);
 
             if($logHistoryData = $this->getLogsHistory()){
                 // skip logging if no relevant fields changed
@@ -1232,15 +1251,22 @@ class CharacterModel extends AbstractPathfinderModel {
                         // no changes in 'relevant' fields -> just update timestamp
                         $task = 'update';
                         $mapIds = (array)$historyEntryPrev['mapIds'];
+                        // keep 'gap' of the original state change ('stamp' refresh must not reset it)
+                        $gap = isset($historyEntryPrev['gap']) ? $historyEntryPrev['gap'] : null;
+                    }else{
+                        // seconds of "polling blind spot" between the previous log state and this one.
+                        // a large gap means the character was NOT tracked in between (e.g. cleanup/poll
+                        // cron died, ESI outage) -> a systemId change across it is untrusted as a "jump"
+                        $gap = $stamp - (int)$historyEntryPrev['stamp'];
                     }
                 }
             }
 
-            /** @var object{updated:mixed} $characterLog */
             $historyEntry = [
-                'stamp'     => strtotime($characterLog->updated),
+                'stamp'     => $stamp,
                 'action'    => $action,
                 'mapIds'    => $mapIds,
+                'gap'       => $gap,
                 'log'       => $historyLog
             ];
 
@@ -1369,6 +1395,19 @@ class CharacterModel extends AbstractPathfinderModel {
                 $addEntry = false;
                 //if(in_array($mapId, (array)$historyEntry['mapIds'], true)){   // $historyEntry is checked by EACH map -> would auto add system on map switch! #827
                 if(!empty((array)$historyEntry['mapIds'])){                     // if $historyEntry was already checked by ANY other map -> no further checks
+                    $skipRest = true;
+                }
+
+                if(
+                    !$skipRest &&
+                    (int)$historyEntry['log']['system']['id'] === $systemId &&
+                    isset($historyEntry['gap']) &&
+                    (int)$historyEntry['gap'] > self::getLogInactiveTime()
+                ){
+                    // the state change INTO the current system crossed a polling blind spot larger
+                    // than the log cleanup threshold (e.g. cleanup cron died and a stale log survived
+                    // a session break). Whatever comes before it can not be trusted as jump source
+                    // -> better miss one connection than draw a wrong one
                     $skipRest = true;
                 }
 
