@@ -1001,6 +1001,22 @@ class CharacterModel extends AbstractPathfinderModel {
                             }
                         }
 
+                        // zombie log guard ----------------------------------------------------------------------
+                        // an existing log this old means the cleanup cron missed it (e.g. cron/worker died
+                        // while the character was in-game offline) -> session continuity is broken.
+                        // erase it (cascades to LOG_HISTORY cleanup) and start over with a fresh log,
+                        // so the stale system -> current system change is not misread as a direct jump.
+                        // threshold: 2x cleanup limit, because healthy rows can legitimately age up to
+                        // ~CHARACTER_LOG_INACTIVE + cron latency before deleteLogData() touches them
+                        if(!$characterLog->dry() && !empty($characterLog->updated)){
+                            $logAge = time() - strtotime($characterLog->updated);
+                            if($logAge > 2 * self::getLogInactiveTime()){
+                                $characterLog->erase();
+                                $characterLog = $this->rel('characterLog');
+                                $characterLog->reset();
+                            }
+                        }
+
                         // get current log data and modify on change
                         $logData = $characterLog::toArray($characterLog->getData());
 
