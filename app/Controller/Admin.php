@@ -125,6 +125,31 @@ class Admin extends Controller{
     }
 
     /**
+     * [SECURITY][CSRF] 상태 변경(mutating) 관리자 액션에 대한 same-origin 검증.
+     * 세션 쿠키가 SameSite=Lax 라서 cross-site "최상위 GET 네비게이션"은 쿠키를 그대로 실어 보낼 수 있다.
+     * kick/ban/map delete/ACL remove/spydetect delete 등은 UI에서 GET <a> 링크(또는 GET XHR)로 트리거되므로
+     * POST-only 로 강제하면 정상 흐름이 깨진다. 대신 요청의 Origin/Referer host 가 앱 host 와 일치하는지
+     * 확인하여 cross-site 로 유발된 변경을 차단한다(정상 관리 UI 는 항상 same-origin 이므로 통과한다).
+     * 불일치하거나 둘 다 없으면 403 후 즉시 종료한다.
+     * @param \Base $f3
+     */
+    protected function assertSameOrigin(\Base $f3): void {
+        $appHost = preg_replace('/:\d+$/', '', (string)$f3->get('HEADERS.Host'));
+        $source  = (string)$f3->get('HEADERS.Origin');
+        if($source === ''){
+            $source = (string)$f3->get('HEADERS.Referer');
+        }
+        $sourceHost = $source !== '' ? parse_url($source, PHP_URL_HOST) : null;
+
+        if($appHost === '' || !is_string($sourceHost) || strcasecmp($sourceHost, $appHost) !== 0){
+            $f3->status(403);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'message' => 'Forbidden: cross-origin request rejected'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    }
+
+    /**
      * dispatch page events by URL $params
      * @param \Base $f3
      * @param $params
@@ -167,6 +192,9 @@ class Admin extends Controller{
                         // [AI NOTE] HTML form 은 항상 POST + array_merge. GET 은 프록시(Traefik)에서 유실될 수 있음.
                         $values = array_merge((array)$f3->get('GET'), (array)$f3->get('POST'));
 
+                        // [SECURITY][CSRF] save/remove(상태 변경) 실행 전 same-origin 검증
+                        $this->assertSameOrigin($f3);
+
                         if($parts[1] === 'corp'){
                             switch($action){
                                 case 'save':   $this->saveCorpAcl($character, $objectId, $values); break;
@@ -189,6 +217,8 @@ class Admin extends Controller{
                 case 'members':
                     switch($parts[1]){
                         case 'kick':
+                            // [SECURITY][CSRF] 상태 변경 전 same-origin 검증
+                            $this->assertSameOrigin($f3);
                             $objectId = (int)$parts[2];
                             $value  = (int)$parts[3];
                             $this->kickCharacter($character, $objectId, $value);
@@ -196,6 +226,8 @@ class Admin extends Controller{
                             $f3->reroute('@admin(@*=/' . $parts[0] . ')');
                             break;
                         case 'ban':
+                            // [SECURITY][CSRF] 상태 변경 전 same-origin 검증
+                            $this->assertSameOrigin($f3);
                             $objectId = (int)$parts[2];
                             $value  = (int)$parts[3];
                             $this->banCharacter($character, $objectId, $value);
@@ -211,6 +243,8 @@ class Admin extends Controller{
                 case 'maps':
                     switch($parts[1]){
                         case 'active':
+                            // [SECURITY][CSRF] 상태 변경 전 same-origin 검증
+                            $this->assertSameOrigin($f3);
                             $objectId = (int)$parts[2];
                             $value  = (int)$parts[3];
                             $this->activateMap($character, $objectId, $value);
@@ -218,6 +252,8 @@ class Admin extends Controller{
                             $f3->reroute('@admin(@*=/' . $parts[0] . ')');
                             break;
                         case 'delete':
+                            // [SECURITY][CSRF] 상태 변경 전 same-origin 검증
+                            $this->assertSameOrigin($f3);
                             $objectId = (int)$parts[2];
                             $this->deleteMap($character, $objectId);
                             $f3->reroute('@admin(@*=/' . $parts[0] . ')');
@@ -246,6 +282,8 @@ class Admin extends Controller{
                     if (isset($parts[1]) && $parts[1] === 'issuer' && isset($parts[2]) && ctype_digit($parts[2])
                         && isset($parts[3]) && $parts[3] === 'character' && isset($parts[4]) && ctype_digit($parts[4])
                         && isset($parts[5]) && $parts[5] === 'delete') {
+                        // [SECURITY][CSRF] 상태 변경(관계 삭제) 전 same-origin 검증
+                        $this->assertSameOrigin($f3);
                         $this->spydetectDeleteCharacter($f3, (int)$parts[2], (int)$parts[4]);
                         return;
                     }

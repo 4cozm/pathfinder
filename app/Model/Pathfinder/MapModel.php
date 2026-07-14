@@ -879,6 +879,13 @@ class MapModel extends AbstractMapTrackingModel {
             return (bool)$characterAcl->canEdit; // 개인 완전 오버라이드(허용/차단), 만료면 corp으로 fallback
         }
 
+        // [SECURITY FIX F4-rest-idor-map] corp/alliance 맵 편집권은 "이 맵에 실제 접근권이 있는" 캐릭터로 한정한다.
+        // corp ACL의 canEdit 만으로 판정하면 Corp-X 편집자가 id로 Corp-Y 맵을 수정하는 cross-tenant IDOR 이 가능하므로,
+        // canEdit 을 참조하기 전에 이 특정 맵에 대한 멤버십(hasAccess)을 반드시 확인한다. (private 맵은 위에서 이미 hasAccess 요구)
+        if(!$this->hasAccess($character)){
+            return false;
+        }
+
         if($corporation = $character->getCorporation()){
             $corpAcl = CorpAclModel::getByCorporationId((int)$corporation->_id);
             if($corpAcl && !$corpAcl->isExpired()){

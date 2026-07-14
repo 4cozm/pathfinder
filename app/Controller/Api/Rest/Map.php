@@ -66,7 +66,9 @@ class Map extends AbstractRestController {
              */
             $map = Pathfinder\AbstractPathfinderModel::getNew('MapModel');
             $map->getById($mapId);
-            if($map->hasAccess($activeCharacter)){
+            // [SECURITY FIX F4-rest-idor-map] 조회 권한(hasAccess)만으로 맵 설정/공유 ACL 수정을 허용하면
+            // 뷰 전용 멤버(canEdit=0)가 맵을 변경할 수 있다. put()/delete() 와 동일하게 편집 권한(hasRight)으로 게이팅한다.
+            if($map->hasRight($activeCharacter, 'map_update')){
                 $mapData = $this->update($map, $requestData)->getData(true);
             }
         }
