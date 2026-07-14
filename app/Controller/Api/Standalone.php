@@ -121,9 +121,9 @@ class Standalone extends User
             $this->jsonOut($f3, 401, ['ok' => false, 'message' => 'Bad signature']);
         }
 
-        // nonce 재사용 방지 (issue에서 이미 markOnce 했지만, verify에서도 “확실히” 막고 싶으면 consume 형태로 바꿀 수 있음)
-        // 여기서는 issue에서 이미 1회성으로 찍혔으므로 별도 재검증은 생략.
-
+        // SECURITY FIX (F6-standalone-jwt): 서버 오설정(500) 검사는 nonce 소비보다 먼저 수행한다.
+        // 그렇지 않으면 PF_PING_JWT_SECRET 미설정 같은 서버 문제로 nonce가 소비(파일 삭제)되어
+        // 정당한 클라이언트가 재발급 없이는 다시 시도할 수 없게 된다.
         $pingSecret = (string)Config::getEnvironmentData('PF_PING_JWT_SECRET');
         if (strlen($pingSecret) < 32) {
             $this->jsonOut($f3, 500, ['ok' => false, 'message' => 'Missing PF_PING_JWT_SECRET']);
@@ -134,6 +134,20 @@ class Standalone extends User
         } catch (\Throwable $e) {
             $this->jsonOut($f3, 400, ['ok' => false, 'message' => 'Bad jwk']);
         }
+
+        // SECURITY FIX (F6-standalone-jwt): payload nonce를 원자적으로 1회 소비한다.
+        // issue()가 만든 nonce 파일을 여기서 삭제하며, 캡처된 payload로 재생(replay)
+        // 시도가 오면 파일이 없어 거부된다. → payload는 최대 1회만 verify 가능.
+        // 위의 서버 오설정/jwk 검증을 모두 통과한 뒤 마지막 관문으로 소비하여, 실패 경로에서
+        // nonce가 헛되이 소진되지 않도록 한다.
+        if (!$this->nonce_consume($nonce)) {
+            $this->jsonOut($f3, 401, ['ok' => false, 'message' => 'Payload already used or expired']);
+        }
+
+        // TODO (F6-standalone-jwt): cnf.jkt가 여전히 verify() 요청 body의 jwk에서 파생되므로,
+        // 공격자가 cnf.jkt를 임의 지정하는 것(DPoP proof-of-possession 바인딩 우회)을 서버 단독
+        // 변경만으로는 완전히 막을 수 없다. 완전한 방어는 jwk를 issue() 시점으로 옮기고 PoP를
+        // 수행하는 "협의된 standalone-클라이언트 릴리스"가 필요하며, 이는 의도적으로 유보한다.
 
         // 핑 토큰 TTL (MVP는 길게 잡는 게 운영 편함)
         $pingExpSec = 60 * 60 * 12; // 12h
@@ -235,6 +249,22 @@ class Standalone extends User
         fwrite($fp, (string)time());
         fclose($fp);
         return true;
+    }
+
+    // SECURITY FIX (F6-standalone-jwt): verify()에서 payload nonce를 1회성으로 소비한다.
+    // issue()가 markOnce로 만든 파일을 삭제하며, 동시 요청이 와도 unlink에 성공한
+    // 단 한 번의 호출만 통과하므로 payload replay가 차단된다.
+    private function nonce_consume(string $nonce): bool
+    {
+        $dir = $this->tmpDir(self::NONCE_DIR);
+        $safe = preg_replace('/[^a-zA-Z0-9\-_]/', '', $nonce);
+        if ($safe === '') return false;
+
+        $path = $dir . '/' . $safe;
+        if (!is_file($path)) return false;
+
+        // atomic single-use
+        return @unlink($path);
     }
 
     // ----- ticket (verify 결과) -----
