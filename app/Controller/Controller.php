@@ -14,6 +14,7 @@ use Exodus4D\Pathfinder\Lib\Api\CcpClient;
 use Exodus4D\Pathfinder\Lib\Config;
 use Exodus4D\Pathfinder\Lib\Api\EsiRouteStatusAdapter;
 use Exodus4D\Pathfinder\Lib\Db\Sql;
+use Exodus4D\Pathfinder\Lib\Metrics;
 use Exodus4D\Pathfinder\Lib\Resource;
 use Exodus4D\Pathfinder\Lib\Monolog;
 use Exodus4D\Pathfinder\Lib\Util;
@@ -115,8 +116,11 @@ class Controller {
      */
     function beforeroute(\Base $f3, $params) : bool {
         // increment active worker count
+        // (decrement happens in unload() — afterroute()는 에러 경로에서 호출되지 않아
+        //  게이지가 위로 드리프트하던 문제가 있었음. unload()는 항상 호출된다)
         if($redis = $this->getRedis()){
             $redis->incr('PF_ACTIVE_WORKERS');
+            $f3->set('PF_WORKER_COUNTED', true);
         }
 
         // init user session
@@ -147,11 +151,6 @@ class Controller {
      * @param \Base $f3
      */
     public function afterroute(\Base $f3){
-        // decrement active worker count
-        if($redis = $this->getRedis()){
-            $redis->decr('PF_ACTIVE_WORKERS');
-        }
-
         // send preload/prefetch headers
         $resource = Resource::instance();
         if($resource->getOption('output') === 'header'){
@@ -195,7 +194,12 @@ class Controller {
                     return false;
                 };
 
+                // 세션 시작 시간 계측: F3 DB Session은 시작 시 sessions row lock을 잡으므로
+                // (SELECT ... FOR UPDATE) 같은 세션의 동시 폴링 요청이 여기서 직렬화된다.
+                // 이 히스토그램이 크면 "세션 락 경합 = 렉의 원인" 가설이 증명된다.
+                $sessionStart = microtime(true);
                 new Mysql\Session($db, 'sessions', true, $onSuspect);
+                Metrics::histogram('pf_session_start_seconds', [], microtime(true) - $sessionStart);
             }
         }
     }
@@ -865,7 +869,63 @@ class Controller {
         // this should work even on non HTTP200 responses
         $this->logActivities();
 
+        // decrement active worker count (beforeroute()에서 증가한 경우에만 —
+        // 라우팅 전 404 등 beforeroute 미실행 경로에서 음수 드리프트 방지)
+        if($f3->get('PF_WORKER_COUNTED') && ($redis = $this->getRedis())){
+            $redis->decr('PF_ACTIVE_WORKERS');
+        }
+
+        $this->observeRequestMetrics($f3);
+
         return true;
+    }
+
+    /**
+     * request duration/status 관측 (UNLOAD 훅 — 에러 응답 포함 모든 요청에서 호출됨)
+     * @param \Base $f3
+     */
+    protected function observeRequestMetrics(\Base $f3){
+        try {
+            if($f3->get('CLI')){
+                // CLI(cron dispatch)는 AbstractCron 계측이 담당
+                return;
+            }
+            $pattern = (string)$f3->get('PATTERN');
+            if($pattern === '/metrics'){
+                // 스크레이프 자체는 관측 대상에서 제외
+                return;
+            }
+
+            $status = http_response_code();
+            $status = $status ? (string)$status : 'unknown';
+
+            // route 라벨: 카디널리티 폭발 방지가 최우선
+            // - 404/405는 임의 URL이 라벨로 흘러들 수 있으므로 하나로 묶는다
+            // - 와일드카드 API 라우트는 실제 디스패치된 controller/action 사용 (클래스 존재 = 유한)
+            if($status === '404' || $status === '405'){
+                $route = '(unmatched)';
+            }else{
+                $params = (array)$f3->get('PARAMS');
+                $alias = (string)$f3->get('ALIAS');
+                if($alias !== ''){
+                    $route = $alias;
+                }elseif(!empty($params['controller'])){
+                    $prefix = (strpos($pattern, '/api/rest/') === 0) ? 'api/rest/' : 'api/';
+                    $route = $prefix . $params['controller'] . (isset($params['action']) ? '/' . $params['action'] : '');
+                }else{
+                    $route = $pattern !== '' ? $pattern : 'unknown';
+                }
+                $route = substr(preg_replace('/[^a-zA-Z0-9_\/.@-]/', '_', $route), 0, 60);
+            }
+
+            Metrics::histogram('pf_http_request_duration_seconds', [
+                'route'     => $route,
+                'method'    => (string)$f3->get('VERB'),
+                'status'    => $status,
+            ], microtime(true) - $f3->get('TIME'));
+        } catch (\Throwable $e) {
+            // metrics must never break unload
+        }
     }
 
     /**

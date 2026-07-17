@@ -9,6 +9,7 @@
 namespace Exodus4D\Pathfinder\Lib\Socket;
 
 
+use Exodus4D\Pathfinder\Lib\Metrics;
 use React\EventLoop;
 use React\Socket;
 use React\Promise;
@@ -93,6 +94,7 @@ abstract class AbstractSocket implements SocketInterface {
      * @return Promise\PromiseInterface
      */
     public function write(string $task, $load = null) : Promise\PromiseInterface {
+        $writeStart = microtime(true);
         $deferred = new Promise\Deferred();
         $payload = $this->newPayload($task, $load);
 
@@ -129,11 +131,19 @@ abstract class AbstractSocket implements SocketInterface {
 
         $this->getLoop()->run();
 
+        // getLoop()->run()은 동기(블로킹) — 소켓 서버가 느리면 이 요청 전체가 지연된다.
+        // 이 히스토그램이 크면 "소켓 push가 웹 요청을 잡아먹는다"가 병목 원인
+        Metrics::histogram('pf_socket_push_duration_seconds', ['task' => $task],
+            microtime(true) - $writeStart, Metrics::BUCKETS_OUTBOUND);
+
         return $deferred->promise()
             ->otherwise(
                 // final exception handler for rejected promises -> convert to payload array
                 // -> No socket related Exceptions should be thrown down the chain
-                function(\Exception $e){
+                function(\Exception $e) use ($task){
+                    // push 실패는 지금까지 조용히 삼켜졌음 → 카운터 + stderr로 노출
+                    Metrics::counter('pf_socket_push_failures_total', ['task' => $task]);
+                    error_log(sprintf('[SOCKET_PUSH_FAIL] task=%s error=%s', $task, $e->getMessage()));
                     return new Promise\RejectedPromise(
                         $this->newPayload('error', $e->getMessage())
                     );

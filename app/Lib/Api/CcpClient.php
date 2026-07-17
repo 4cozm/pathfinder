@@ -9,6 +9,7 @@
 namespace Exodus4D\Pathfinder\Lib\Api;
 
 use Exodus4D\Pathfinder\Lib\Config;
+use Exodus4D\Pathfinder\Lib\Metrics;
 use Exodus4D\ESI\Client\ApiInterface;
 use Exodus4D\ESI\Client\Ccp\Esi\Esi as Client;
 
@@ -69,6 +70,13 @@ class CcpClient extends AbstractClient {
 
         if($duration > 2.0){
             $this->getLogger('SLOW_ESI')->write(sprintf('Critically slow ESI call: %s (%.2fs)', $name, $duration));
+        }
+
+        // Prometheus 노출용 (기존 5초 버킷은 backpressure 전용이라 유지)
+        // $name = ESI client 메서드명 (getCharacterLocation 등) → 유한 카디널리티
+        Metrics::histogram('pf_esi_request_duration_seconds', ['endpoint' => $name], $duration, Metrics::BUCKETS_OUTBOUND);
+        if(isset($return['error'])){
+            Metrics::counter('pf_esi_errors_total', ['endpoint' => $name]);
         }
 
         return $return;

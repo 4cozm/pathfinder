@@ -9,6 +9,7 @@
 namespace Exodus4D\Pathfinder\Cron;
 
 use Exodus4D\Pathfinder\Lib\Format\Number;
+use Exodus4D\Pathfinder\Lib\Metrics;
 use Exodus4D\Pathfinder\Model\Pathfinder;
 
 abstract class AbstractCron {
@@ -209,7 +210,15 @@ abstract class AbstractCron {
                 'lastAlertMem'      => $cronModel->lastAlertMem,
                 'lastAlertFail'     => $cronModel->lastAlertFail
             ];
-            
+
+            // Prometheus 노출 (이미 계산된 값 재사용 — cron_history/Discord 알림과 별개)
+            Metrics::counter('pf_cron_runs_total', ['job' => $job]);
+            Metrics::gauge('pf_cron_last_duration_seconds', ['job' => $job], $duration);
+            Metrics::gauge('pf_cron_last_cpu_seconds', ['job' => $job], $cpuTime);
+            Metrics::gauge('pf_cron_last_mem_peak_bytes', ['job' => $job], $memPeak);
+            Metrics::gauge('pf_cron_fail_count', ['job' => $job], $failCount);
+
+
             // Discord Webhook Logic
             $f3 = \Base::instance();
             $cpuWarningThreshold = (float)$f3->get('CRON_CPU_WARNING_THRESHOLD') ?: 10.0;

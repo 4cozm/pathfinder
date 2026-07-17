@@ -5,6 +5,7 @@ namespace Exodus4D\Pathfinder\Lib\Db;
 
 
 use DB\SQL\Schema;
+use Exodus4D\Pathfinder\Lib\Metrics;
 
 class Sql extends \DB\SQL {
 
@@ -113,6 +114,28 @@ class Sql extends \DB\SQL {
      * @return array|FALSE|int
      */
     function exec($cmds, $args = null, $ttl = 0, $log = false, $stamp = false) {
-        return parent::exec($cmds, $args, $ttl, $log, $stamp);
+        $start = microtime(true);
+        try {
+            return parent::exec($cmds, $args, $ttl, $log, $stamp);
+        } finally {
+            $duration = microtime(true) - $start;
+            $cmd = is_array($cmds) ? (string)reset($cmds) : (string)$cmds;
+            $op = strtolower(strtok(ltrim($cmd), " \t\n("));
+            if(!in_array($op, ['select', 'insert', 'update', 'delete', 'replace', 'show', 'set', 'alter', 'create'])){
+                $op = 'other';
+            }
+            Metrics::histogram('pf_db_query_duration_seconds', [
+                'db' => (string)$this->name(),
+                'op' => $op,
+            ], $duration, Metrics::BUCKETS_DB);
+
+            // 1초 이상 걸린 쿼리는 stderr(→ docker logs → Loki)로 원문 일부를 남긴다
+            if($duration > 1.0){
+                error_log(sprintf(
+                    '[SLOW_SQL] db=%s op=%s duration=%.3fs query=%s',
+                    $this->name(), $op, $duration, substr(preg_replace('/\s+/', ' ', $cmd), 0, 300)
+                ));
+            }
+        }
     }
 }

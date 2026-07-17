@@ -166,7 +166,20 @@ while (true) {
                 $memMb,
                 $peakMb
             ));
-            
+
+            // Prometheus 노출 (기존 tick 로그 값 재사용)
+            try {
+                Lib\Metrics::histogram('pf_daemon_tick_duration_seconds', [], $tickMs / 1000);
+                Lib\Metrics::counter('pf_daemon_ticks_total');
+                Lib\Metrics::counter('pf_daemon_chars_processed_total', [], (int)max(0, $stats['charsProcessed'] ?? 0));
+                if(($errorCount = (int)($stats['errors'] ?? 0)) > 0){
+                    Lib\Metrics::counter('pf_daemon_errors_total', [], $errorCount);
+                }
+                Lib\Metrics::gauge('pf_daemon_mem_peak_mb', [], $peakMb);
+            } catch (\Throwable $e) {
+                // metrics must never break the daemon loop
+            }
+
             $lastJobRun = $now;
         } catch (\Throwable $e) {
             error_log('[standalone-daemon][EXCEPTION] ' . $e->getMessage());
