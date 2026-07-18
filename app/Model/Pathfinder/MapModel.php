@@ -678,19 +678,40 @@ class MapModel extends AbstractMapTrackingModel {
     public function getStructuresData(int $systemId) : array {
         $structuresData = [];
         $corporations = $this->getAllCorporations();
+        if(empty($corporations)){
+            return $structuresData;
+        }
 
+        // corp 별 개별 find(corp 수 × JOIN 쿼리 + Cortex 필터빌드 CPU)가 시스템 조회
+        // 지연(~1s)의 주범이었다 (slowlog 실측) → 피벗 테이블 1회 조회로 집약 후
+        // 맵 소속 corp 만 PHP 에서 그룹핑. 시맨틱은 기존과 동일:
+        // pivot.active AND structure.active AND structure.systemId = $systemId
+        $corporationsById = [];
         foreach($corporations as $corporation){
-            // corporations should be unique
-            if( !isset($structuresData[$corporation->_id]) ){
-                // get all structures for current corporation
-                $corporationStructuresData = $corporation->getStructuresData($systemId);
-                if( !empty($corporationStructuresData) ){
-                    // corporation has structures
-                    $structuresData[$corporation->_id] = [
-                        'id' => $corporation->_id,
-                        'name' => $corporation->name,
-                        'structures' => $corporationStructuresData
-                    ];
+            $corporationsById[$corporation->_id] = $corporation;
+        }
+
+        /**
+         * @var $corporationStructure CorporationStructureModel
+         */
+        $corporationStructure = self::getNew('CorporationStructureModel');
+        $corporationStructure->has('structureId', $this->mergeFilter([
+            self::getFilter('systemId', $systemId),
+            self::getFilter('active', true)
+        ]));
+
+        if($pivotRows = $corporationStructure->find(self::getFilter('active', true))){
+            foreach($pivotRows as $pivotRow){
+                $corporationId = $pivotRow->get('corporationId', true);
+                if(isset($corporationsById[$corporationId])){
+                    if(!isset($structuresData[$corporationId])){
+                        $structuresData[$corporationId] = [
+                            'id' => $corporationId,
+                            'name' => $corporationsById[$corporationId]->name,
+                            'structures' => []
+                        ];
+                    }
+                    $structuresData[$corporationId]['structures'][] = $pivotRow->structureId->getData();
                 }
             }
         }
