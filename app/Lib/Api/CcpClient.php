@@ -54,6 +54,12 @@ class CcpClient extends AbstractClient {
         $return = parent::__call($name, $arguments);
         $duration = microtime(true) - $startTime;
 
+        // 호출은 대부분 send('getXxx',...)/sendBatch() 래퍼를 경유하므로 $name만 쓰면
+        // 전부 endpoint="send"로 뭉개진다 → 실제 핸들러명을 라벨로 사용
+        $endpoint = ($name === 'send' && isset($arguments[0]) && is_string($arguments[0]))
+            ? $arguments[0]
+            : $name;
+
         if($redis = $this->getRedis()){
             $bucketId = floor($startTime / 5);
             $key = 'PF_ESI_METRICS_' . $bucketId;
@@ -69,14 +75,14 @@ class CcpClient extends AbstractClient {
         }
 
         if($duration > 2.0){
-            $this->getLogger('SLOW_ESI')->write(sprintf('Critically slow ESI call: %s (%.2fs)', $name, $duration));
+            $this->getLogger('SLOW_ESI')->write(sprintf('Critically slow ESI call: %s (%.2fs)', $endpoint, $duration));
         }
 
         // Prometheus 노출용 (기존 5초 버킷은 backpressure 전용이라 유지)
-        // $name = ESI client 메서드명 (getCharacterLocation 등) → 유한 카디널리티
-        Metrics::histogram('pf_esi_request_duration_seconds', ['endpoint' => $name], $duration, Metrics::BUCKETS_OUTBOUND);
+        // $endpoint = ESI 핸들러명 (getCharacterLocation 등) → 유한 카디널리티
+        Metrics::histogram('pf_esi_request_duration_seconds', ['endpoint' => $endpoint], $duration, Metrics::BUCKETS_OUTBOUND);
         if(isset($return['error'])){
-            Metrics::counter('pf_esi_errors_total', ['endpoint' => $name]);
+            Metrics::counter('pf_esi_errors_total', ['endpoint' => $endpoint]);
         }
 
         return $return;

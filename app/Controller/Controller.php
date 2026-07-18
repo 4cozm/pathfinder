@@ -201,6 +201,13 @@ class Controller {
                 new Mysql\Session($db, 'sessions', true, $onSuspect);
                 Metrics::histogram('pf_session_start_seconds', [], microtime(true) - $sessionStart);
             }
+        }else if(!headers_sent() && session_status() === PHP_SESSION_NONE){
+            // SESSION_CACHE=default → php.ini의 save_handler(운영: phpredis)가 세션을 담당.
+            // F3의 lazy start 대신 여기서 명시적으로 시작해 시작 시간(=핸들러 read +
+            // locking_enabled 시 락 대기)을 계측한다.
+            $sessionStart = microtime(true);
+            session_start();
+            Metrics::histogram('pf_session_start_seconds', [], microtime(true) - $sessionStart);
         }
     }
 
