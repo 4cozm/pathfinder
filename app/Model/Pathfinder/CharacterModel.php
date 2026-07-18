@@ -981,7 +981,16 @@ class CharacterModel extends AbstractPathfinderModel {
             // Try to pull data from API
             if($accessToken = $this->getAccessToken()){
                 if($this->isOnline($accessToken)){
-                    $locationData = self::getF3()->ccpClient()->send('getCharacterLocation', $this->_id, $accessToken);
+                    // location + ship 을 병렬(sendBatch) 요청.
+                    // 순차 호출은 서울→ESI 왕복(각 0.4~0.8s)이 합산돼 폴링 지연의 주범이었다.
+                    // online 게이트는 유지 — 오프라인 캐릭터에 불필요한 ESI 호출(rate limit 토큰)을
+                    // 쓰지 않기 위함. ship 결과는 아래 ship 블록에서 사용한다.
+                    $batchResults = self::getF3()->ccpClient()->sendBatch([
+                        ['getCharacterLocation', $this->_id, $accessToken],
+                        ['getCharacterShip', $this->_id, $accessToken],
+                    ]);
+                    $locationData = (array)($batchResults[0] ?? []);
+                    $prefetchedShipData = (array)($batchResults[1] ?? []);
 
                     if(!empty($locationData['system']['id'])){
                         // character is currently in-game
@@ -1114,7 +1123,8 @@ class CharacterModel extends AbstractPathfinderModel {
 
                         // check ship data for changes ----------------------------------------------------------------
                         if(!$deleteLog){
-                            $shipData = self::getF3()->ccpClient()->send('getCharacterShip', $this->_id, $accessToken);
+                            // location 과 함께 병렬로 미리 받아둔 응답 사용 (위 sendBatch 참고)
+                            $shipData = $prefetchedShipData;
 
                             // IDs for "shipTypeId" that require more data
                             $lookupShipTypeId = 0;

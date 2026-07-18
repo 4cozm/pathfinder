@@ -56,9 +56,17 @@ class CcpClient extends AbstractClient {
 
         // 호출은 대부분 send('getXxx',...)/sendBatch() 래퍼를 경유하므로 $name만 쓰면
         // 전부 endpoint="send"로 뭉개진다 → 실제 핸들러명을 라벨로 사용
-        $endpoint = ($name === 'send' && isset($arguments[0]) && is_string($arguments[0]))
-            ? $arguments[0]
-            : $name;
+        if($name === 'send' && isset($arguments[0]) && is_string($arguments[0])){
+            $endpoint = $arguments[0];
+        }elseif($name === 'sendBatch' && isset($arguments[0]) && is_array($arguments[0])){
+            // batch 는 포함된 핸들러명 목록으로 라벨링 (병렬이라 duration = max(개별))
+            $handlers = array_map(function($config){
+                return (is_array($config) && is_string($config[0] ?? null)) ? $config[0] : '?';
+            }, $arguments[0]);
+            $endpoint = 'batch(' . implode('+', $handlers) . ')';
+        }else{
+            $endpoint = $name;
+        }
 
         if($redis = $this->getRedis()){
             $bucketId = floor($startTime / 5);
