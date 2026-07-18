@@ -42,9 +42,27 @@ class Metrics {
     const BUCKETS_OUTBOUND = [0.05, 0.1, 0.25, 0.5, 1, 1.5, 2, 3, 5, 10];
 
     /**
+     * flush threshold — 장수명 프로세스(데몬)에서 버퍼가 무한히 크지 않도록 하는 안전판.
+     * 웹 요청은 shutdown 훅에서, 데몬은 tick마다 명시적 flush()가 정상 경로다.
+     */
+    const BUFFER_MAX = 512;
+
+    /**
      * @var \Redis|null|false false = uninitialized, null = unavailable
      */
     private static $redis = false;
+
+    /**
+     * in-process sample buffer: field => ['op' => incr|incrfloat|set, 'val' => number]
+     * 관측 1건당 Redis 왕복 대신, 요청/tick 단위로 병합해 파이프라인 1회로 flush 한다.
+     * @var array
+     */
+    private static $buffer = [];
+
+    /**
+     * @var bool shutdown flush 등록 여부
+     */
+    private static $shutdownRegistered = false;
 
     /**
      * @return \Redis|null
@@ -80,13 +98,7 @@ class Metrics {
      * @param int $value
      */
     public static function counter(string $name, array $labels = [], int $value = 1) : void {
-        try {
-            if($redis = self::getRedis()){
-                $redis->hIncrBy(self::REDIS_KEY, 'c|' . $name . '|' . self::labelString($labels), $value);
-            }
-        } catch (\Throwable $e) {
-            // metrics must never break the request
-        }
+        self::record('incr', 'c|' . $name . '|' . self::labelString($labels), $value);
     }
 
     /**
@@ -96,13 +108,7 @@ class Metrics {
      * @param float $value
      */
     public static function gauge(string $name, array $labels, float $value) : void {
-        try {
-            if($redis = self::getRedis()){
-                $redis->hSet(self::REDIS_KEY, 'g|' . $name . '|' . self::labelString($labels), $value);
-            }
-        } catch (\Throwable $e) {
-            // metrics must never break the request
-        }
+        self::record('set', 'g|' . $name . '|' . self::labelString($labels), $value);
     }
 
     /**
@@ -113,20 +119,72 @@ class Metrics {
      * @param array $buckets ascending bucket upper bounds
      */
     public static function histogram(string $name, array $labels, float $value, array $buckets = self::BUCKETS_HTTP) : void {
+        $le = '+Inf';
+        foreach($buckets as $bucket){
+            if($value <= $bucket){
+                $le = self::formatFloat($bucket);
+                break;
+            }
+        }
+        $labelStr = self::labelString($labels);
+        self::record('incr', 'hb|' . $name . '|' . $le . '|' . $labelStr, 1);
+        self::record('incrfloat', 'hs|' . $name . '|' . $labelStr, $value);
+        self::record('incr', 'hc|' . $name . '|' . $labelStr, 1);
+    }
+
+    /**
+     * buffer a sample (Redis 왕복 없음 — flush 시점에 파이프라인 1회로 합산 전송)
+     * @param string $op incr|incrfloat|set
+     * @param string $field
+     * @param int|float $value
+     */
+    protected static function record(string $op, string $field, $value) : void {
+        try {
+            if(isset(self::$buffer[$field]) && $op !== 'set'){
+                self::$buffer[$field]['val'] += $value;
+            }else{
+                self::$buffer[$field] = ['op' => $op, 'val' => $value];
+            }
+
+            if(!self::$shutdownRegistered){
+                self::$shutdownRegistered = true;
+                register_shutdown_function([self::class, 'flush']);
+            }
+
+            if(count(self::$buffer) >= self::BUFFER_MAX){
+                self::flush();
+            }
+        } catch (\Throwable $e) {
+            // metrics must never break the request
+        }
+    }
+
+    /**
+     * flush buffered samples to Redis in a single pipeline.
+     * 웹 요청은 shutdown 훅이 자동 호출, 장수명 프로세스(데몬)는 주기적으로 직접 호출할 것.
+     */
+    public static function flush() : void {
+        if(!self::$buffer){
+            return;
+        }
+        $buffer = self::$buffer;
+        self::$buffer = [];
         try {
             if($redis = self::getRedis()){
-                $le = '+Inf';
-                foreach($buckets as $bucket){
-                    if($value <= $bucket){
-                        $le = self::formatFloat($bucket);
-                        break;
+                $pipe = $redis->multi(\Redis::PIPELINE);
+                foreach($buffer as $field => $entry){
+                    switch($entry['op']){
+                        case 'incr':
+                            $pipe->hIncrBy(self::REDIS_KEY, $field, (int)$entry['val']);
+                            break;
+                        case 'incrfloat':
+                            $pipe->hIncrByFloat(self::REDIS_KEY, $field, (float)$entry['val']);
+                            break;
+                        case 'set':
+                            $pipe->hSet(self::REDIS_KEY, $field, $entry['val']);
+                            break;
                     }
                 }
-                $labelStr = self::labelString($labels);
-                $pipe = $redis->multi(\Redis::PIPELINE);
-                $pipe->hIncrBy(self::REDIS_KEY, 'hb|' . $name . '|' . $le . '|' . $labelStr, 1);
-                $pipe->hIncrByFloat(self::REDIS_KEY, 'hs|' . $name . '|' . $labelStr, $value);
-                $pipe->hIncrBy(self::REDIS_KEY, 'hc|' . $name . '|' . $labelStr, 1);
                 $pipe->exec();
             }
         } catch (\Throwable $e) {
@@ -141,6 +199,8 @@ class Metrics {
     public static function render() : string {
         $out = '';
         try {
+            // 자기 프로세스 버퍼를 먼저 비워 최신 샘플까지 포함
+            self::flush();
             if(!$redis = self::getRedis()){
                 return "# Redis unavailable, no app metrics\n";
             }

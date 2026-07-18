@@ -176,6 +176,8 @@ while (true) {
                     Lib\Metrics::counter('pf_daemon_errors_total', [], $errorCount);
                 }
                 Lib\Metrics::gauge('pf_daemon_mem_peak_mb', [], $peakMb);
+                // 장수명 프로세스라 shutdown flush에 기대지 않고 tick마다 즉시 전송
+                Lib\Metrics::flush();
             } catch (\Throwable $e) {
                 // metrics must never break the daemon loop
             }

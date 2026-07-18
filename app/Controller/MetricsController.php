@@ -36,6 +36,40 @@ class MetricsController {
         echo $this->runtimeGauges();
         echo $this->phpFpmMetrics();
         echo $this->nginxStubMetrics();
+        echo $this->opcacheMetrics();
+    }
+
+    /**
+     * Zend OPcache 상태 → pf_opcache_* metrics (히트율/메모리 — 컴파일 병목 감시)
+     * @return string
+     */
+    protected function opcacheMetrics() : string {
+        if(!function_exists('opcache_get_status')){
+            return $this->scrapeError('opcache');
+        }
+        $status = @opcache_get_status(false);
+        if(!is_array($status)){
+            return $this->scrapeError('opcache');
+        }
+
+        $out = "# TYPE pf_opcache_enabled gauge\n";
+        $out .= 'pf_opcache_enabled ' . (int)($status['opcache_enabled'] ?? 0) . "\n";
+        if(isset($status['opcache_statistics'])){
+            $stats = $status['opcache_statistics'];
+            $out .= "# TYPE pf_opcache_hits_total counter\n";
+            $out .= 'pf_opcache_hits_total ' . (int)$stats['hits'] . "\n";
+            $out .= "# TYPE pf_opcache_misses_total counter\n";
+            $out .= 'pf_opcache_misses_total ' . (int)$stats['misses'] . "\n";
+            $out .= "# TYPE pf_opcache_cached_scripts gauge\n";
+            $out .= 'pf_opcache_cached_scripts ' . (int)$stats['num_cached_scripts'] . "\n";
+        }
+        if(isset($status['memory_usage'])){
+            $out .= "# TYPE pf_opcache_memory_used_bytes gauge\n";
+            $out .= 'pf_opcache_memory_used_bytes ' . (int)$status['memory_usage']['used_memory'] . "\n";
+            $out .= "# TYPE pf_opcache_memory_free_bytes gauge\n";
+            $out .= 'pf_opcache_memory_free_bytes ' . (int)$status['memory_usage']['free_memory'] . "\n";
+        }
+        return $out;
     }
 
     /**
