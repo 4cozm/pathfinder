@@ -16,7 +16,13 @@ class BackpressureManager extends \Prefab {
     const WEIGHT_LATENCY            = 10;   // Latency spike weight
 
     const MEM_LIMIT_BYTES           = 400 * 1024 * 1024; // 400MB
-    const WORKER_LIMIT              = 12;
+    // pm.max_children(20)과 일치시킴. 구 값 12는 2GB/워커10 시절 기준이라
+    // 건강한 폴링 버스트(워커 6+)에도 압력이 붙어 상시 스로틀 → 트래킹 블라인드 스팟의
+    // 만성 원인이었다 (50% 바닥과 결합해 이제 워커 10+부터 압력으로 계산됨)
+    const WORKER_LIMIT              = 20;
+
+    // php-fpm status 페이지 (내부 전용 :8081 vhost, docker 네트워크에서 서비스명 'pf')
+    const FPM_STATUS_URL            = 'http://pf:8081/fpm-status?json';
 
     /**
      * @var \Redis|null
@@ -61,6 +67,32 @@ class BackpressureManager extends \Prefab {
     }
 
     /**
+     * Get current busy php-fpm worker count from the fpm status page (ground truth).
+     *
+     * 기존 Redis PF_ACTIVE_WORKERS(incr/decr) 방식은 unload가 실행되지 않는 경로
+     * (request_terminate_timeout 강제종료, fatal 등)에서 위로만 드리프트해
+     * 실측 32+ (max_children=20 초과!)까지 오염됐고, 그 결과 압력 점수가 상시
+     * 18~20 → 매분 캐릭터 ~20% 폴링 스로틀 → 트래킹 끊김을 유발했다. 폐기.
+     * @return int
+     */
+    protected function getActiveWorkers() : int {
+        try {
+            $context = stream_context_create(['http' => ['timeout' => 0.5, 'ignore_errors' => true]]);
+            $body = @file_get_contents(self::FPM_STATUS_URL, false, $context);
+            if($body !== false){
+                $status = json_decode($body, true);
+                if(is_array($status) && isset($status['active processes'])){
+                    return (int)$status['active processes'];
+                }
+            }
+        } catch (\Throwable $e) {
+            // fall through
+        }
+        // 상태 페이지 접근 불가 → 신호 없음(압력 0)으로 처리. 오탐 스로틀보다 낫다
+        return 0;
+    }
+
+    /**
      * Update the global pressure score based on fused signals
      * This should be called by a background process or periodically by a worker
      */
@@ -68,7 +100,7 @@ class BackpressureManager extends \Prefab {
         if(!$redis = $this->getRedis()) return;
 
         $now = time();
-        $activeWorkers = (int)$redis->get(self::KEY_ACTIVE_WORKERS);
+        $activeWorkers = $this->getActiveWorkers();
         $memUsage = $this->getMemoryUsage();
 
         // 1. Gather ESI metrics from last 3 buckets (15 seconds)

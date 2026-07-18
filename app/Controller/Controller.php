@@ -115,13 +115,10 @@ class Controller {
      * @return bool
      */
     function beforeroute(\Base $f3, $params) : bool {
-        // increment active worker count
-        // (decrement happens in unload() — afterroute()는 에러 경로에서 호출되지 않아
-        //  게이지가 위로 드리프트하던 문제가 있었음. unload()는 항상 호출된다)
-        if($redis = $this->getRedis()){
-            $redis->incr('PF_ACTIVE_WORKERS');
-            $f3->set('PF_WORKER_COUNTED', true);
-        }
+        // NOTE: 과거 여기서 PF_ACTIVE_WORKERS를 incr/decr로 관리했으나, 강제종료
+        // (request_terminate_timeout)·fatal 등 unload 미실행 경로에서 위로만 드리프트해
+        // (실측 30,000+) 폐기함. 워커 수는 php-fpm status가 그라운드 트루스
+        // (BackpressureManager::getActiveWorkers(), /metrics의 pf_phpfpm_active_processes)
 
         // init user session
         $this->initSession($f3);
@@ -875,12 +872,6 @@ class Controller {
         // store all user activities that are buffered for logging in this request
         // this should work even on non HTTP200 responses
         $this->logActivities();
-
-        // decrement active worker count (beforeroute()에서 증가한 경우에만 —
-        // 라우팅 전 404 등 beforeroute 미실행 경로에서 음수 드리프트 방지)
-        if($f3->get('PF_WORKER_COUNTED') && ($redis = $this->getRedis())){
-            $redis->decr('PF_ACTIVE_WORKERS');
-        }
 
         $this->observeRequestMetrics($f3);
 

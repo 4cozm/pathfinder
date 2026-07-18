@@ -9,6 +9,7 @@
 namespace Exodus4D\Pathfinder\Controller\Api;
 
 use Exodus4D\Pathfinder\Lib\Config;
+use Exodus4D\Pathfinder\Lib\Metrics;
 use Exodus4D\Pathfinder\Controller;
 use Exodus4D\Pathfinder\Data\File\FileHandler;
 use Exodus4D\Pathfinder\Model\AbstractModel;
@@ -865,6 +866,9 @@ class Map extends Controller\AccessController {
                                     $addSourceSystem = true;
                                     $addTargetSystem = true;
                                     $addConnection = true;
+                                }else{
+                                    // k-k 인접(게이트 점프) 판정 → wh 맵에선 미추적 (설계 동작)
+                                    Metrics::counter('pf_tracking_blocked_total', ['reason' => 'route_reachable']);
                                 }
                             }
                             break;
@@ -896,6 +900,9 @@ class Map extends Controller\AccessController {
                         $sourceSystem->systemId === 30000142 ||
                         $targetSystem->systemId === 30000142
                     ){
+                        if(!$sameSystem && $addConnection){
+                            Metrics::counter('pf_tracking_blocked_total', ['reason' => 'jita']);
+                        }
                         $addConnection = false;
                         $addSourceSystem = false;
                         $addTargetSystem = false;
@@ -909,6 +916,9 @@ class Map extends Controller\AccessController {
                     );
 
                     if (!$placementResult) {
+                        if(!$sameSystem && $addConnection){
+                            Metrics::counter('pf_tracking_blocked_total', ['reason' => 'placement']);
+                        }
                         $addSourceSystem = false;
                         $addTargetSystem = false;
                         $addConnection = false;
@@ -1014,6 +1024,7 @@ class Map extends Controller\AccessController {
                                     }
 
                                     if(!$route['routePossible']){
+                                        Metrics::counter('pf_tracking_blocked_total', ['reason' => 'podded']);
                                         $addConnection = false;
                                     }
                                 }
@@ -1026,8 +1037,20 @@ class Map extends Controller\AccessController {
                                 if($connection){
                                     $map = $connection->mapId;
                                     $mapDataChanged = true;
+                                    Metrics::counter('pf_tracking_jump_total', ['result' => 'connection_created']);
+                                }else{
+                                    Metrics::counter('pf_tracking_jump_total', ['result' => 'save_failed']);
                                 }
+                            }else{
+                                // 위 blocked 사유(scope/route_reachable/jita/abyss/placement/podded)로 미생성
+                                Metrics::counter('pf_tracking_jump_total', ['result' => 'not_added']);
                             }
+                        }elseif($connection){
+                            // 두 시스템 간 커넥션이 이미 존재
+                            Metrics::counter('pf_tracking_jump_total', ['result' => 'connection_exists']);
+                        }else{
+                            // 이동은 감지됐지만 blocked 사유(scope/jita/abyss/placement 등)로 미생성
+                            Metrics::counter('pf_tracking_jump_total', ['result' => 'not_added']);
                         }
 
                         // log jump mass ==============================================================================

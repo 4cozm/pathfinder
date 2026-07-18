@@ -975,6 +975,9 @@ class CharacterModel extends AbstractPathfinderModel {
                 $now = new \DateTime();
                 $lastUpdate = new \DateTime($characterLog->updated);
                 if($now->getTimestamp() - $lastUpdate->getTimestamp() < 60){
+                    // 스로틀 스킵 = 트래킹 블라인드 스팟. 이 카운터가 높으면
+                    // 커넥션 끊김의 1순위 용의자다 (backpressure 점수 확인할 것)
+                    \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_tracking_throttled_total');
                     return $this;
                 }
             }
@@ -1417,11 +1420,14 @@ class CharacterModel extends AbstractPathfinderModel {
 
         if($mapId && $systemId){
             $skipRest = false;
-            $logHistoryData = $this->filterLogsHistory(function(array $historyEntry) use ($mapId, $systemId, &$skipRest) : bool {
+            $checkedByOtherMap = false;
+            $gapBlocked = false;
+            $logHistoryData = $this->filterLogsHistory(function(array $historyEntry) use ($mapId, $systemId, &$skipRest, &$checkedByOtherMap, &$gapBlocked) : bool {
                 $addEntry = false;
                 //if(in_array($mapId, (array)$historyEntry['mapIds'], true)){   // $historyEntry is checked by EACH map -> would auto add system on map switch! #827
                 if(!empty((array)$historyEntry['mapIds'])){                     // if $historyEntry was already checked by ANY other map -> no further checks
                     $skipRest = true;
+                    $checkedByOtherMap = true;
                 }
 
                 if(
@@ -1435,6 +1441,7 @@ class CharacterModel extends AbstractPathfinderModel {
                     // a session break). Whatever comes before it can not be trusted as jump source
                     // -> better miss one connection than draw a wrong one
                     $skipRest = true;
+                    $gapBlocked = true;
                 }
 
                 if(
@@ -1462,6 +1469,19 @@ class CharacterModel extends AbstractPathfinderModel {
 
                 $this->updateLogHistoryEntry($historyEntry);
             }
+
+            // 커넥션 소스 판정 관측 — 'gap_blocked'가 높으면 폴링 블라인드 스팟이
+            // 커넥션 끊김으로 이어지고 있다는 뜻 (원인: 스로틀/ESI실패/탭 백그라운드)
+            if($characterLog){
+                $result = 'found';
+            }elseif($gapBlocked){
+                $result = 'gap_blocked';
+            }elseif($checkedByOtherMap){
+                $result = 'checked_other_map';
+            }else{
+                $result = 'none';
+            }
+            \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_tracking_prev_system_total', ['result' => $result]);
         }
 
         return $characterLog;

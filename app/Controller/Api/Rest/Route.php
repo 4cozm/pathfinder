@@ -501,7 +501,9 @@ class Route extends AbstractRestController {
 
         // Endpoint return http:404 in case no route find (e.g. from inside a wh)
         // we thread that error "no route found" as a valid response! -> no fallback to custom search
-        if(!empty($routeData['error']) && strtolower($routeData['error']) !== 'no route found'){
+        // 신규 ESI(compat date 체계)는 같은 상황에서 "Not Found"를 반환 — 둘 다 유효한
+        // '루트 없음'으로 처리한다 (아니면 웜홀발 검색마다 무거운 custom 폴백을 탄다)
+        if(!empty($routeData['error']) && !in_array(strtolower($routeData['error']), ['no route found', 'not found'], true)){
             // ESI route search has errors -> fallback to custom search implementation
             $routeData = $this->searchRouteCustom($systemFromId, $systemToId, $searchDepth, $mapIds, $filterData);
         }

@@ -80,11 +80,7 @@ class MetricsController {
         $out = '';
         try {
             if($redis = $this->getRedis()){
-                $workers = $redis->get('PF_ACTIVE_WORKERS');
-                if($workers !== false){
-                    $out .= "# TYPE pf_active_workers gauge\n";
-                    $out .= 'pf_active_workers ' . (int)$workers . "\n";
-                }
+                // (pf_active_workers 게이지 폐기 — 드리프트. pf_phpfpm_active_processes 사용)
                 $pressure = $redis->get('PF_P_SKIP');
                 if($pressure !== false){
                     $out .= "# TYPE pf_backpressure_score gauge\n";
