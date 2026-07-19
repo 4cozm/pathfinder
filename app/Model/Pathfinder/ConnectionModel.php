@@ -530,9 +530,16 @@ class ConnectionModel extends AbstractMapTrackingModel {
     /**
      * Log mass for this connection (idempotent: same character + same jump = one record).
      * Goal: one jump recorded once regardless of browser/standalone path.
-     * - Uses dedupeKey (connectionId_characterId_sourceSystemId_targetSystemId) + UNIQUE; no time-window heuristic.
      * - Duplicate key on insert is treated as success (no-op), not error (no 500).
      * - Connection selection (searchConnection / parallel-hole policy) is unchanged.
+     *
+     * dedupeKey는 '점프 사건'을 식별해야 한다 (경로가 아니라).
+     * 구 키(connectionId_characterId_from_to)에는 시간 성분이 없어 같은 웜홀을 같은
+     * 방향으로 두 번째 통과하는 순간부터 UNIQUE 충돌로 영구히 조용히 버려졌다.
+     * → 웜홀 롤링(질량 붕괴용 반복 통행)에서 누적 질량이 실제보다 과소 집계됨.
+     * characterLog.updated는 값이 실제로 바뀔 때만 touch되므로(AbstractModel::set)
+     * '현재 시스템에 진입한 시각' = 점프 사건의 안정적 식별자다. 같은 점프를 웹/데몬이
+     * 동시에 처리하면 같은 row를 읽어 키가 일치(중복 차단), 재통행은 새 시각이라 기록된다.
      *
      * @param CharacterLogModel $characterLog
      * @param int $fromSystemId source system id (jump direction)
@@ -546,7 +553,15 @@ class ConnectionModel extends AbstractMapTrackingModel {
 
         $connectionId = (int)$this->_id;
         $characterId  = (int)$characterLog->characterId->_id;
-        $dedupeKey    = $connectionId . '_' . $characterId . '_' . $fromSystemId . '_' . $targetSystemId;
+
+        // 점프 사건 시각. 파싱 실패 시 time() 폴백 — 중복 1건이 누락 1건보다 낫다
+        // (질량 집계는 과소 집계가 치명적, 과대 집계는 눈에 보임)
+        $jumpAt = !empty($characterLog->updated) ? strtotime((string)$characterLog->updated) : 0;
+        if(!$jumpAt){
+            $jumpAt = time();
+        }
+
+        $dedupeKey    = $connectionId . '_' . $characterId . '_' . $fromSystemId . '_' . $targetSystemId . '_' . $jumpAt;
 
         $log = $this->getNewLog();
         $log->shipTypeId     = $characterLog->shipTypeId;
@@ -560,6 +575,7 @@ class ConnectionModel extends AbstractMapTrackingModel {
 
         try {
             $log->save();
+            \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_connection_mass_log_total', ['result' => 'logged']);
         } catch (\Throwable $e) {
             $code = $e->getCode();
             $msg  = (string)$e->getMessage();
@@ -567,8 +583,12 @@ class ConnectionModel extends AbstractMapTrackingModel {
                 || stripos($msg, 'Duplicate entry') !== false
                 || stripos($msg, 'duplicate key') !== false;
             if ( $isDuplicate ) {
+                // 정상 동작: 같은 점프를 웹/데몬이 동시 처리한 경우.
+                // 이 카운터가 logged 대비 비정상적으로 높으면 키 설계를 다시 봐야 한다
+                \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_connection_mass_log_total', ['result' => 'deduped']);
                 return $this;
             }
+            \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_connection_mass_log_total', ['result' => 'error']);
             throw $e;
         }
 
