@@ -2,6 +2,7 @@
 
 namespace Exodus4D\Pathfinder\Lib\Api;
 
+use Exodus4D\Pathfinder\Lib\CgroupMemory;
 use Exodus4D\Pathfinder\Lib\Config;
 
 class BackpressureManager extends \Prefab {
@@ -9,13 +10,67 @@ class BackpressureManager extends \Prefab {
     const KEY_P_SKIP                = 'PF_P_SKIP';
     const KEY_ACTIVE_WORKERS        = 'PF_ACTIVE_WORKERS';
     const KEY_ESI_METRICS_PREFIX    = 'PF_ESI_METRICS_';
-    
+
+    /**
+     * 웹(pf) 컨테이너가 게시한 자기 메모리 상태. 데몬이 읽어서 압력 점수에 쓴다.
+     *
+     * 왜 Redis 를 경유하는가:
+     *  updatePressureScore()는 pf-daemon 컨테이너에서 돈다. 거기서 cgroup 을 직접 읽으면
+     *  **데몬 자신의** 메모리(mem_limit 300MB)를 읽게 되는데, 정작 조절하려는 대상은
+     *  웹 워커의 ESI 폴링이다. 즉 분모(한도)도 분자(사용량)도 엉뚱한 컨테이너 것이 된다.
+     *  getActiveWorkers()가 http://pf:8081/fpm-status 로 웹 컨테이너를 건너가 읽는 것과
+     *  같은 이유이며, 메모리는 Redis 를 전송로로 쓴다.
+     */
+    const KEY_WEB_MEMORY            = 'PF_WEB_MEM';
+
+    /**
+     * 측정 주기 election 용 키. 웹 워커가 동시에 여러 개 떠 있어도
+     * 이 창 안에서는 한 요청만 실제 cgroup 을 읽는다.
+     */
+    const KEY_WEB_MEMORY_GATE       = 'PF_WEB_MEM_GATE';
+
+    /**
+     * 측정 주기(초). 데몬 tick(기본 10s)보다 촘촘하면 충분하다.
+     */
+    const WEB_MEMORY_SAMPLE_SECONDS = 5;
+
+    /**
+     * 게시값 수명(초). 웹이 죽거나 게시 경로가 끊기면 이 시간 뒤 신호가 사라진다.
+     *
+     * TTL 이 없으면 마지막 값이 영원히 남아 실제와 무관한 압력을 만든다.
+     * PF_ACTIVE_WORKERS 가 정확히 그렇게 드리프트해 상시 스로틀을 유발했다.
+     */
+    const WEB_MEMORY_TTL_SECONDS    = 30;
+
     const WEIGHT_FAIL               = 40;   // Error rate weight
     const WEIGHT_MEMORY             = 30;   // Memory pressure weight
     const WEIGHT_CONCURRENCY        = 20;   // Worker load weight
     const WEIGHT_LATENCY            = 10;   // Latency spike weight
 
-    const MEM_LIMIT_BYTES           = 400 * 1024 * 1024; // 400MB
+    /**
+     * 메모리 신호를 점수에 반영할지 여부.
+     *
+     * false 인 동안 s_mem 은 항상 0 이다 — 즉 지금까지의(버그 있던) 동작을
+     * 의도적으로 그대로 유지한다. 점수 상한도 70 그대로다.
+     *
+     * 왜 바로 켜지 않는가:
+     *  getMemoryUsage()가 cgroup v1 경로만 보다가 v2 호스트에서 항상 0을 돌려줬고,
+     *  그 결과 WEIGHT_MEMORY(30)가 통째로 죽어 있었다. 이제 실값이 들어오므로
+     *  켜는 순간 점수가 전 구간에서 올라가고, 스로틀이 예고 없이 발동할 수 있다.
+     *  과거 PF_ACTIVE_WORKERS 드리프트로 점수가 상시 18~20이 되어 폴링이 스로틀되고
+     *  트래킹이 끊긴 사고와 같은 유형이다.
+     *
+     *  따라서 먼저 pf_memory_usage_bytes / pf_memory_limit_bytes 를 하루 관측해
+     *  MEM_PRESSURE_FLOOR 를 실측에 맞춘 뒤 별도 커밋으로 켠다.
+     *  (이 상수만 true 로 바꾸면 되고, 회귀 시 그 커밋만 되돌리면 된다)
+     */
+    const MEMORY_PRESSURE_ENABLED   = false;
+
+    /**
+     * 메모리 사용률이 이 값을 넘어야 압력으로 계산한다.
+     * 넘은 만큼을 (1.0 - FLOOR) 구간에 정규화해 0.0~1.0 신호로 만든다.
+     */
+    const MEM_PRESSURE_FLOOR        = 0.7;
     // pm.max_children(20)과 일치시킴. 구 값 12는 2GB/워커10 시절 기준이라
     // 건강한 폴링 버스트(워커 6+)에도 압력이 붙어 상시 스로틀 → 트래킹 블라인드 스팟의
     // 만성 원인이었다 (50% 바닥과 결합해 이제 워커 10+부터 압력으로 계산됨)
@@ -54,16 +109,59 @@ class BackpressureManager extends \Prefab {
     }
 
     /**
-     * Get current container memory usage (RSS)
-     * @return int bytes
+     * [웹 컨테이너에서 호출] 자기 cgroup 메모리 상태를 Redis 에 게시한다.
+     *
+     * 요청 UNLOAD 훅에서 불린다. 매 요청 cgroup 을 읽지 않도록
+     * SET NX EX 로 5초에 한 요청만 실제 측정하게 한다 —
+     * 흔한 경로(이미 최근에 측정됨)의 비용은 Redis 왕복 1회다.
      */
-    protected function getMemoryUsage() : int {
-        $usage = 0;
-        $path = '/sys/fs/cgroup/memory/memory.usage_in_bytes';
-        if(file_exists($path)){
-            $usage = (int)trim(file_get_contents($path));
+    public function publishWebMemory() : void {
+        try {
+            if(!$redis = $this->getRedis()) return;
+
+            // 이 창의 측정 담당을 한 요청으로 정한다
+            if(!$redis->set(self::KEY_WEB_MEMORY_GATE, 1, ['nx', 'ex' => self::WEB_MEMORY_SAMPLE_SECONDS])){
+                return;
+            }
+
+            $workingSet = CgroupMemory::readWorkingSetBytes();
+            $limit      = CgroupMemory::readLimitBytes();
+            if(is_null($workingSet) || is_null($limit)){
+                // 측정 불가는 게시하지 않는다 → TTL 만료로 '신호 없음'이 된다.
+                // 0 같은 중립값을 써넣으면 '한가함'과 구분되지 않는다.
+                return;
+            }
+
+            $redis->hMset(self::KEY_WEB_MEMORY, [
+                'workingSet' => $workingSet,
+                'limit'      => $limit,
+            ]);
+            $redis->expire(self::KEY_WEB_MEMORY, self::WEB_MEMORY_TTL_SECONDS);
+        } catch (\Throwable $e) {
+            // 관측이 요청을 깨뜨려선 안 된다
         }
-        return $usage;
+    }
+
+    /**
+     * [데몬에서 호출] 웹 컨테이너의 메모리 사용률 (0.0~1.0+). 신호 없음/측정 불가 시 null.
+     *
+     * 값의 출처가 로컬 cgroup 이 아니라 Redis 인 이유는 KEY_WEB_MEMORY 주석 참고.
+     *
+     * @return float|null
+     */
+    protected function getMemoryPressureRatio() : ?float {
+        try {
+            if(!$redis = $this->getRedis()) return null;
+
+            $data = $redis->hGetAll(self::KEY_WEB_MEMORY);
+            if(!is_array($data) || !isset($data['workingSet'], $data['limit'])){
+                return null;
+            }
+
+            return CgroupMemory::pressureRatio((int)$data['workingSet'], (int)$data['limit']);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -101,7 +199,6 @@ class BackpressureManager extends \Prefab {
 
         $now = time();
         $activeWorkers = $this->getActiveWorkers();
-        $memUsage = $this->getMemoryUsage();
 
         // 1. Gather ESI metrics from last 3 buckets (15 seconds)
         $metrics = ['total' => 0, 'fail' => 0, 'slow' => 0, 'latency_sum' => 0];
@@ -119,10 +216,16 @@ class BackpressureManager extends \Prefab {
         // 2. Calculate normalized signals (0.0 to 1.0)
         $s_fail = ($metrics['total'] > 5) ? ($metrics['fail'] / $metrics['total']) : 0;
         
+        // 측정 불가(null)는 0(=한가함)과 같이 취급된다. 신호가 없을 뿐 압력의 근거는 아니므로
+        // 이게 맞는 선택이지만, 그래서 '측정이 죽은 것'이 점수만 봐서는 안 보인다.
+        // 측정 실패 자체는 /metrics 의 pf_exporter_scrape_error{target="cgroup_memory"} 로 드러난다.
         $s_mem = 0;
-        if(self::MEM_LIMIT_BYTES > 0){
-            $memRatio = $memUsage / self::MEM_LIMIT_BYTES;
-            $s_mem = ($memRatio > 0.7) ? min(1.0, ($memRatio - 0.7) / 0.3) : 0;
+        if(self::MEMORY_PRESSURE_ENABLED){
+            $memRatio = $this->getMemoryPressureRatio();
+            if(!is_null($memRatio) && $memRatio > self::MEM_PRESSURE_FLOOR){
+                $headroom = 1.0 - self::MEM_PRESSURE_FLOOR;
+                $s_mem = min(1.0, ($memRatio - self::MEM_PRESSURE_FLOOR) / $headroom);
+            }
         }
 
         $s_work = min(1.0, $activeWorkers / self::WORKER_LIMIT);

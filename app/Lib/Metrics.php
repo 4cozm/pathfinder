@@ -42,6 +42,23 @@ class Metrics {
     const BUCKETS_OUTBOUND = [0.05, 0.1, 0.25, 0.5, 1, 1.5, 2, 3, 5, 10];
 
     /**
+     * 요청별 PHP 피크 메모리 버킷 (bytes).
+     * php.ini memory_limit(128M)을 상단 경계로 잡아, 어느 요청이 한도에
+     * 근접하는지 분포로 보이게 한다. 컨테이너 전체 사용량(pf_memory_usage_bytes)과
+     * 달리 이건 "요청 하나가 얼마나 먹는가"다.
+     */
+    const BUCKETS_MEMORY_BYTES = [
+        2097152,    // 2M
+        4194304,    // 4M
+        8388608,    // 8M
+        16777216,   // 16M
+        33554432,   // 32M
+        67108864,   // 64M
+        100663296,  // 96M
+        134217728,  // 128M  (= memory_limit)
+    ];
+
+    /**
      * flush threshold — 장수명 프로세스(데몬)에서 버퍼가 무한히 크지 않도록 하는 안전판.
      * 웹 요청은 shutdown 훅에서, 데몬은 tick마다 명시적 flush()가 정상 경로다.
      */

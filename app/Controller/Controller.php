@@ -10,6 +10,7 @@ namespace Exodus4D\Pathfinder\Controller;
 
 
 use Exodus4D\Pathfinder\Controller\Api as Api;
+use Exodus4D\Pathfinder\Lib\Api\BackpressureManager;
 use Exodus4D\Pathfinder\Lib\Api\CcpClient;
 use Exodus4D\Pathfinder\Lib\Config;
 use Exodus4D\Pathfinder\Lib\Api\EsiRouteStatusAdapter;
@@ -921,6 +922,22 @@ class Controller {
                 'method'    => (string)$f3->get('VERB'),
                 'status'    => $status,
             ], microtime(true) - $f3->get('TIME'));
+
+            // 요청 하나가 먹는 피크 메모리 분포.
+            // 라벨을 붙이지 않는다 — route 라벨을 달면 시계열이 route 수만큼 불어나는데,
+            // 여기서 알고 싶은 건 "한도(128M)에 근접하는 요청이 있는가"이지 route별 비교가 아니다.
+            Metrics::histogram(
+                'pf_php_memory_peak_bytes',
+                [],
+                (float)memory_get_peak_usage(true),
+                Metrics::BUCKETS_MEMORY_BYTES
+            );
+
+            // 이 컨테이너(웹)의 메모리 상태를 데몬이 볼 수 있도록 Redis 에 게시한다.
+            // 압력 점수는 데몬에서 계산되는데, 데몬이 직접 cgroup 을 읽으면
+            // 자기 자신(mem_limit 300MB)을 읽게 되어 엉뚱한 신호가 된다.
+            // 내부적으로 5초에 한 번만 실제 측정한다.
+            BackpressureManager::instance()->publishWebMemory();
         } catch (\Throwable $e) {
             // metrics must never break unload
         }
