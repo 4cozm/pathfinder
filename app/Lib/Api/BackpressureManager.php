@@ -71,10 +71,12 @@ class BackpressureManager extends \Prefab {
      * 넘은 만큼을 (1.0 - FLOOR) 구간에 정규화해 0.0~1.0 신호로 만든다.
      */
     const MEM_PRESSURE_FLOOR        = 0.7;
-    // pm.max_children(20)과 일치시킴. 구 값 12는 2GB/워커10 시절 기준이라
-    // 건강한 폴링 버스트(워커 6+)에도 압력이 붙어 상시 스로틀 → 트래킹 블라인드 스팟의
-    // 만성 원인이었다 (50% 바닥과 결합해 이제 워커 10+부터 압력으로 계산됨)
-    const WORKER_LIMIT              = 20;
+    // pm.max_children(32)과 일치시킴 — static/php/fpm-pool.conf 와 반드시 같이 움직인다.
+    // 이 값은 워커 압력의 분모라, max_children 만 올리고 여기를 두면 실제로는 62% 여유가
+    // 있는데 분모를 다 채운 것으로 읽어 폴링을 조기 스로틀한다. 구 값 12가 2GB/워커10
+    // 시절 기준으로 남아 건강한 폴링 버스트(워커 6+)에도 압력을 붙이던 것과 같은 사고다.
+    // (50% 바닥과 결합해 이제 워커 16+부터 압력으로 계산됨)
+    const WORKER_LIMIT              = 32;
 
     // php-fpm status 페이지 (내부 전용 :8081 vhost, docker 네트워크에서 서비스명 'pf')
     const FPM_STATUS_URL            = 'http://pf:8081/fpm-status?json';
