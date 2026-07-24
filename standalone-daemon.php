@@ -183,6 +183,26 @@ while (true) {
             }
 
             $lastJobRun = $now;
+
+            // 하트비트 — docker-compose 의 pf-daemon healthcheck 가 이 값을 읽어
+            // "살아 있지만 일을 못 하는" 상태를 판정하고, unhealthy 가 지속되면
+            // autoheal 이 컨테이너를 재시작한다.
+            //
+            // ⚠️ 반드시 **성공한 틱에서만** 갱신해야 한다. 루프 상단에서 매초 찍으면
+            // 실패 모드 2종 중 하나만 잡힌다:
+            //   (a) DB hang  → updateStandaloneTrackedLogs 가 무한 블록. 루프가 아예
+            //                  안 도므로 상단에 찍어도 잡힌다 (2026-07-23 장애: 14:31:36
+            //                  이후 로그 완전 침묵)
+            //   (b) DB 재시작 → 커넥션이 죽은 채 catch(\Throwable) 가 예외를 삼키고
+            //                  루프는 계속 돈다. 상단에 찍으면 하트비트가 계속 갱신되어
+            //                  **영원히 healthy 로 보인다**. 이 모드가 실제로 더 흔하다
+            //                  (standalone-daemon 은 시작 시 한 번만 커넥션을 잡고
+            //                   루프에서 재연결하지 않는다)
+            // 여기 두면 (a)(b) 둘 다 하트비트가 멈춘다.
+            $heartbeatFile = '/tmp/daemon-heartbeat';
+            if(@file_put_contents($heartbeatFile . '.tmp', (string)$now) !== false){
+                @rename($heartbeatFile . '.tmp', $heartbeatFile);
+            }
         } catch (\Throwable $e) {
             error_log('[standalone-daemon][EXCEPTION] ' . $e->getMessage());
         }
