@@ -50,25 +50,30 @@ class BackpressureManager extends \Prefab {
     /**
      * 메모리 신호를 점수에 반영할지 여부.
      *
-     * false 인 동안 s_mem 은 항상 0 이다 — 즉 지금까지의(버그 있던) 동작을
-     * 의도적으로 그대로 유지한다. 점수 상한도 70 그대로다.
+     * 2026-07-24 활성화. 켜기 전 조건이었던 "하루 관측 후 MEM_PRESSURE_FLOOR 실측 조정"을
+     * 3일치(7/22~7/24, 재시작 주기 한 바퀴 이상)로 마쳤고, 결론은 **FLOOR 조정 불필요**다.
      *
-     * 왜 바로 켜지 않는가:
-     *  getMemoryUsage()가 cgroup v1 경로만 보다가 v2 호스트에서 항상 0을 돌려줬고,
-     *  그 결과 WEIGHT_MEMORY(30)가 통째로 죽어 있었다. 이제 실값이 들어오므로
-     *  켜는 순간 점수가 전 구간에서 올라가고, 스로틀이 예고 없이 발동할 수 있다.
-     *  과거 PF_ACTIVE_WORKERS 드리프트로 점수가 상시 18~20이 되어 폴링이 스로틀되고
-     *  트래킹이 끊긴 사고와 같은 유형이다.
+     *   pf_backpressure_memory_ratio  7/22 max 0.23 / 7/23 max 0.29 / 7/24 p99 0.26 max 0.31
+     *   working set 절대값            p50 181MB / p99 312MB / max 351MB (한도 1200MB)
      *
-     *  따라서 먼저 pf_memory_usage_bytes / pf_memory_limit_bytes 를 하루 관측해
-     *  MEM_PRESSURE_FLOOR 를 실측에 맞춘 뒤 별도 커밋으로 켠다.
-     *  (이 상수만 true 로 바꾸면 되고, 회귀 시 그 커밋만 되돌리면 된다)
+     * 즉 실측 최대치(0.31)가 FLOOR(0.7)의 절반도 안 되므로, 켜도 현재 부하에서는
+     * s_mem 이 계속 0 이고 점수는 그대로다. 켜는 것의 의미는 "지금 뭔가를 바꾼다"가
+     * 아니라 **working set 이 840MB(=0.7×1200MB)를 넘는 이상 상황에서만 발동하는
+     * 안전망을 살려두는 것**이다. 우려했던 "켜는 순간 점수가 전 구간에서 올라감"은
+     * 분자를 usage → working set(usage - inactive_file)으로 바꾼 뒤 해소됐다.
+     * (page cache 가 섞인 usage 는 가동시간에 비례해 한도까지 올라가 머물렀다)
+     *
+     * 회귀 시 이 상수만 false 로 되돌리면 된다.
      */
-    const MEMORY_PRESSURE_ENABLED   = false;
+    const MEMORY_PRESSURE_ENABLED   = true;
 
     /**
      * 메모리 사용률이 이 값을 넘어야 압력으로 계산한다.
      * 넘은 만큼을 (1.0 - FLOOR) 구간에 정규화해 0.0~1.0 신호로 만든다.
+     *
+     * 0.7 = working set 840MB / 1200MB. 실측 max 가 0.31(351MB)이라 평상시엔 절대
+     * 닿지 않는다. 이 값을 실측(0.31) 근처로 낮추면 정상 부하가 압력으로 잡혀
+     * 폴링이 조기 스로틀되므로(PF_ACTIVE_WORKERS 드리프트 사고와 같은 유형) 낮추지 말 것.
      */
     const MEM_PRESSURE_FLOOR        = 0.7;
     // pm.max_children(32)과 일치시킴 — static/php/fpm-pool.conf 와 반드시 같이 움직인다.
