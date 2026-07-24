@@ -53,7 +53,10 @@ define([
         memoToastClass: 'pf-system-memo-toast',
         memoToastLayerClass: 'pf-map-toast-layer',
         memoToastDurationMs: 10000,
-        memoToastRetryIntervalMs: 200,
+        // 재시도는 요청이 실패했거나 응답에 시스템 데이터가 안 실려온 경우에만 돈다.
+        // (메모가 비어 있는 것은 실패가 아니라 확정된 답이므로 재시도 대상이 아니다)
+        // 그래서 200ms → 1000ms: 진짜 장애 상황에서 10초 동안 50콜이 아니라 10콜만 나간다.
+        memoToastRetryIntervalMs: 1000,
         memoToastRetryTimeoutMs: 10000
     };
 
@@ -1719,6 +1722,16 @@ define([
             return;
         }
 
+        // 메모가 존재할 수 없는 시스템은 아예 조회하지 않는다.
+        // getSystemMemoText()는 statics가 비어 있으면(=웜홀이 아니면) 항상 ''을 돌려주므로
+        // 이런 시스템을 조회해봐야 결과는 정해져 있다. statics는 맵 데이터에 이미 실려 오고
+        // (바로 아래 호출부의 showSystemNotification 분기가 같은 값을 그대로 쓴다)
+        // description만 빠져 있는 상태라, 이 가드로 "웜홀이 아닌 시스템"에 대한 요청이 통째로 사라진다.
+        // 맵 re-init 시 전 시스템이 isNewSystem이 되는데, 그 중 웜홀은 일부뿐이다.
+        if(!(Array.isArray(systemData.statics) && systemData.statics.length > 0)){
+            return;
+        }
+
         let mapId = parseInt(Util.getObjVal(systemData, 'mapId')) || parseInt(mapContainer.data('id')) || 0;
         let systemId = parseInt(Util.getObjVal(systemData, 'id')) || 0;
         if(!mapId || !systemId){
@@ -1731,6 +1744,16 @@ define([
         }
 
         let started = Date.now();
+
+        // 재시도는 "데이터가 아직 안 왔을 때"만 한다.
+        let scheduleRetry = () => {
+            if(Date.now() - started < config.memoToastRetryTimeoutMs){
+                memoToastRetryCache[retryKey] = setTimeout(run, config.memoToastRetryIntervalMs);
+            }else{
+                delete memoToastRetryCache[retryKey];
+            }
+        };
+
         let run = () => {
             // stop retry if system no longer exists (e.g. deleted quickly)
             if(!system.closest('.' + Util.config.mapClass).length){
@@ -1741,23 +1764,28 @@ define([
             Util.request('GET', 'System', systemId, {
                 mapId: mapId
             }, {}).then(payload => {
-                if(showMemo(payload.data)){
+                let data = Util.getObjVal(payload, 'data');
+
+                showMemo(data);
+
+                // 응답이 유효한 시스템 데이터를 담고 있으면 그것이 권위 있는 답이다.
+                // 메모가 비어 있어도 "아직 안 왔다"가 아니라 "이 시스템엔 메모가 없다"이므로
+                // 재시도하지 않는다.
+                //
+                // 이전에는 showMemo()가 false면 무조건 재시도했는데, getSystemMemoText()는
+                // description이 없거나 statics가 없으면(=웜홀이 아니면) 항상 ''을 돌려준다.
+                // 즉 메모 없는 시스템 전부가 200ms × 10초 = 최대 50콜을 쏘고서야 포기했다.
+                // 시스템마다 retryKey가 독립이라 이 루프도 시스템마다 하나씩 돌았고,
+                // 맵 re-init 시에는 전 시스템이 isNewSystem이라 동시에 켜졌다.
+                // 실측(2026-07-24): 클라이언트 하나가 초당 18~27콜, GET /api/rest/System/{id}가
+                // 하루 20,209콜(전체 요청의 34%), 평균 3.39s, 누적 워커 점유 19시간.
+                if(isValidSystem(data)){
                     delete memoToastRetryCache[retryKey];
                     return;
                 }
 
-                if(Date.now() - started < config.memoToastRetryTimeoutMs){
-                    memoToastRetryCache[retryKey] = setTimeout(run, config.memoToastRetryIntervalMs);
-                }else{
-                    delete memoToastRetryCache[retryKey];
-                }
-            }, () => {
-                if(Date.now() - started < config.memoToastRetryTimeoutMs){
-                    memoToastRetryCache[retryKey] = setTimeout(run, config.memoToastRetryIntervalMs);
-                }else{
-                    delete memoToastRetryCache[retryKey];
-                }
-            });
+                scheduleRetry();
+            }, scheduleRetry);
         };
 
         memoToastRetryCache[retryKey] = setTimeout(run, config.memoToastRetryIntervalMs);
