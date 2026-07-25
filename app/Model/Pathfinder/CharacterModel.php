@@ -885,6 +885,33 @@ class CharacterModel extends AbstractPathfinderModel {
     }
 
     /**
+     * name of the per-character mutex that guards every write to this character's log/log-history
+     * -> server-wide (MariaDB named lock), so php-fpm workers and the standalone daemon share it
+     * @return string
+     */
+    protected function getLogLockName() : string {
+        return 'pf_charlog_' . $this->_id;
+    }
+
+    /**
+     * DB handle used for the named lock, or null if the pool is unavailable
+     * -> callers must treat null as "no mutex available" and decide for themselves
+     *    whether the unguarded path is safe
+     * @return mixed|null
+     */
+    protected function getLogLockDb(){
+        try{
+            if(($dbPool = self::getF3()->get('DB')) && is_object($dbPool) && method_exists($dbPool, 'getDB')){
+                return $dbPool->getDB('PF');
+            }
+        }catch(\Throwable $e){
+            return null;
+        }
+
+        return null;
+    }
+
+    /**
      * update character log (active system, ...)
      * -> API request for character log data
      *
@@ -919,15 +946,8 @@ class CharacterModel extends AbstractPathfinderModel {
 
             // 2) per-character mutex (MySQL/MariaDB named lock, non-blocking)
             //    -> lock is server-wide, works across php-fpm workers and the standalone daemon
-            $lockDb = null;
-            $lockName = 'pf_charlog_' . $this->_id;
-            try{
-                if(($dbPool = self::getF3()->get('DB')) && is_object($dbPool) && method_exists($dbPool, 'getDB')){
-                    $lockDb = $dbPool->getDB('PF');
-                }
-            }catch(\Throwable $e){
-                $lockDb = null;
-            }
+            $lockDb = $this->getLogLockDb();
+            $lockName = $this->getLogLockName();
 
             if($lockDb){
                 $lockRes = $lockDb->exec('SELECT GET_LOCK(:lockName, 0) AS acquired', [':lockName' => $lockName]);
@@ -1318,25 +1338,77 @@ class CharacterModel extends AbstractPathfinderModel {
      * @param array $historyEntry
      * @return bool
      */
-    protected function updateLogHistoryEntry(array $historyEntry) : bool {
+    protected function updateLogHistoryEntry(array $historyEntry, int $seenNewestStamp = 0) : bool {
         $updated = false;
 
-        if(
-            $this->valid() &&
-            ($logHistoryData = $this->getLogsHistory())
-        ){
-            $map = function(array $entry) use ($historyEntry, &$updated) : array {
-                if($entry['stamp'] === $historyEntry['stamp']){
-                    $updated = true;
-                    $entry = $historyEntry;
+        if(!$this->valid()){
+            return false;
+        }
+
+        // 이 함수는 LOG_HISTORY 전체 배열을 read-modify-write 한다(updateCacheData 는 CAS 없는 set).
+        // 같은 키를 updateLogsHistory()도 쓰는데 그쪽은 updateLog()의 per-character 락 안에서 돈다.
+        // 예전에는 이 함수만 락 밖이라 다음 순서로 점프가 통째로 사라졌다:
+        //   1) 여기서 history [A(미표시)] 를 읽음
+        //   2) 그 사이 다른 워커/데몬이 점프를 감지해 [B, A] 로 씀
+        //   3) 여기서 자기 사본 [A(표시됨)] 를 덮어씀 → 새 엔트리 B 소멸 + A 는 소비 표시
+        // B 가 다음 폴링에 다시 추가돼도 A 가 이미 표시돼 있어 getLogPrevSystem()이
+        // 'checked_other_map'으로 빠지고, 그 점프는 영구히 그려지지 않는다.
+        // (실측: updateUserData 요청의 6.4%가 같은 클라이언트의 직전 요청과 시간상 겹친다)
+        $lockDb = $this->getLogLockDb();
+        $lockName = $this->getLogLockName();
+        $locked = false;
+
+        if($lockDb){
+            $lockRes = $lockDb->exec('SELECT GET_LOCK(:lockName, 0) AS acquired', [':lockName' => $lockName]);
+            $locked = !empty($lockRes[0]['acquired']);
+
+            if(!$locked){
+                // 락을 못 잡았다 = 다른 쪽이 지금 이 캐릭터의 히스토리를 쓰고 있다.
+                // 여기서 강행하면 그쪽이 방금 추가한 점프 엔트리를 지운다. 표시를 포기한다.
+                // 표시가 밀리면 다음 폴링이 같은 점프를 다시 감지할 뿐이고(connection_exists 로 흡수),
+                // 반대로 유실은 자가 회복 경로가 없다. 비대칭이므로 포기하는 쪽이 안전하다.
+                //
+                // 블로킹 대기를 쓰지 않는 이유: 이 락의 다른 보유자인 updateLog()는
+                // ESI 왕복(~1s) 내내 락을 쥔다. 여기서 기다리면 워커가 그만큼 묶인다.
+                \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_tracking_history_race_total', ['result' => 'lock_busy']);
+
+                return false;
+            }
+        }
+
+        try{
+            // 반드시 락 안에서 "다시" 읽는다. 호출자(getLogPrevSystem)가 들고 있는 사본은
+            // 이미 낡았을 수 있고, 그 사본을 그대로 쓰는 것이 위 3)번 유실의 정체였다.
+            if($logHistoryData = $this->getLogsHistory()){
+                // 호출자가 읽은 시점 이후 히스토리가 바뀌었는지 = 예전 코드가 덮어썼을 창(window).
+                // 이 카운터가 0 이 아니면 위 시나리오가 실제로 일어나고 있었다는 뜻이다.
+                if(
+                    $seenNewestStamp &&
+                    (int)($logHistoryData[0]['stamp'] ?? 0) !== $seenNewestStamp
+                ){
+                    \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_tracking_history_race_total', ['result' => 'raced']);
                 }
-                return $entry;
-            };
 
-            $logHistoryData = array_map($map, $logHistoryData);
+                $map = function(array $entry) use ($historyEntry, &$updated) : array {
+                    if($entry['stamp'] === $historyEntry['stamp']){
+                        $updated = true;
+                        $entry = $historyEntry;
+                    }
+                    return $entry;
+                };
 
-            if($updated){
-                $this->updateCacheData($logHistoryData, self::DATA_CACHE_KEY_LOG_HISTORY, self::TTL_LOG_HISTORY);
+                $logHistoryData = array_map($map, $logHistoryData);
+
+                if($updated){
+                    $this->updateCacheData($logHistoryData, self::DATA_CACHE_KEY_LOG_HISTORY, self::TTL_LOG_HISTORY);
+                }else{
+                    // 표시하려던 엔트리가 재읽기 결과에 없다 = 히스토리가 교체/정리됨
+                    \Exodus4D\Pathfinder\Lib\Metrics::counter('pf_tracking_history_race_total', ['result' => 'entry_gone']);
+                }
+            }
+        }finally{
+            if($locked){
+                $lockDb->exec('SELECT RELEASE_LOCK(:lockName)', [':lockName' => $lockName]);
             }
         }
 
@@ -1422,8 +1494,15 @@ class CharacterModel extends AbstractPathfinderModel {
             $skipRest = false;
             $checkedByOtherMap = false;
             $gapBlocked = false;
-            $logHistoryData = $this->filterLogsHistory(function(array $historyEntry) use ($mapId, $systemId, &$skipRest, &$checkedByOtherMap, &$gapBlocked) : bool {
+            // 필터가 처음 보는 엔트리가 곧 이 시점의 히스토리 최신값이다.
+            // updateLogHistoryEntry()가 락 안에서 재읽기한 값과 비교해 경합을 계측한다.
+            $seenNewestStamp = 0;
+            $logHistoryData = $this->filterLogsHistory(function(array $historyEntry) use ($mapId, $systemId, &$skipRest, &$checkedByOtherMap, &$gapBlocked, &$seenNewestStamp) : bool {
                 $addEntry = false;
+
+                if(!$seenNewestStamp){
+                    $seenNewestStamp = (int)$historyEntry['stamp'];
+                }
                 //if(in_array($mapId, (array)$historyEntry['mapIds'], true)){   // $historyEntry is checked by EACH map -> would auto add system on map switch! #827
                 if(!empty((array)$historyEntry['mapIds'])){                     // if $historyEntry was already checked by ANY other map -> no further checks
                     $skipRest = true;
@@ -1467,7 +1546,7 @@ class CharacterModel extends AbstractPathfinderModel {
                 // mark $historyEntry data as "checked" for $mapId
                 array_push($historyEntry['mapIds'], $mapId);
 
-                $this->updateLogHistoryEntry($historyEntry);
+                $this->updateLogHistoryEntry($historyEntry, $seenNewestStamp);
             }
 
             // 커넥션 소스 판정 관측 — 'gap_blocked'가 높으면 폴링 블라인드 스팟이
