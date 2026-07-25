@@ -142,6 +142,23 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // "대기 N" 옆의 물음표. 예열 워커가 뭔지 모르면 "11개가 놀고 있다"로 읽힌다.
+  .pf-head-host-hint {
+    display: inline-block;
+    margin-left: 3px;
+    width: 11px;
+    height: 11px;
+    line-height: 11px;
+
+    border: 1px solid $gray;
+    border-radius: 50%;
+
+    color: $gray-light;
+    font-size: 8px;
+    text-align: center;
+    cursor: help;
+  }
+
   // 스로틀은 평상시 0 이라 아예 표시하지 않는다. 0 이 아닌 순간은
   // "폴링이 실제로 생략되고 있다"는 뜻이라 그때만 눈에 띄어야 한다.
   .pf-head-host-throttle {

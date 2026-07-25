@@ -172,8 +172,12 @@ define([
         let c = d.cpu || {};
         let parts = [];
 
-        if(w.total && w.limit){
-            parts.push({pct: Math.round(w.total * 100 / w.limit), label: '워커'});
+        // total 이 아니라 active 로 재야 한다.
+        // pm=dynamic + min_spare 8 / max_spare 16 이라 **완전 유휴일 때도 8~16개는
+        // 항상 살아 있다**(콜드스타트를 피하려고 예열해 둔 것). total/limit 으로 재면
+        // 무부하 상태에서도 "부하 40%" 로 보인다. 실제로 일하고 있는 것은 active 다.
+        if(w.limit && (w.active !== null && w.active !== undefined)){
+            parts.push({pct: Math.round(w.active * 100 / w.limit), label: '워커'});
         }
         if(m.percent !== null && m.percent !== undefined){
             parts.push({pct: Math.round(m.percent), label: '메모리'});
@@ -205,7 +209,7 @@ define([
             `[패파 서버 상태] ${(LEVEL[d.level] || LEVEL.unknown)[1]} · 부하 ${val(loadSummary(d).pct, '%')} (${loadSummary(d).label})`,
             `스로틀: ${d.score > 0 ? '작동 중 (점수 ' + d.score + '/100)' : '없음 (점수 0)'}`,
             `측정: ${d.measuredAt ? d.measuredAt.kst : '-'} / ${d.measuredAt ? d.measuredAt.utc : '-'}`,
-            `워커: ${val(w.active)} 실행 + ${val(w.idle)} 대기 = ${val(w.total)} / 한도 ${val(w.limit)}, 큐 ${val(w.queue)}`,
+            `워커: 처리 중 ${val(w.active)} / 한도 ${val(w.limit)} (예열 대기 ${val(w.idle)}, 풀 ${val(w.total)}, 대기열 ${val(w.queue)})`,
             `메모리: ${val(m.workingSetMb, 'MB')} / ${val(m.limitMb, 'MB')} (${val(m.percent, '%')})`,
             `CPU(박스 전체): load ${val(c.load1)} / ${val(c.cores)}코어 = 코어당 ${val(c.perCore)}` +
                 (c.pressure ? `, 대기율 ${c.pressure.avg60}%` : ''),
@@ -232,7 +236,8 @@ define([
         let load = loadSummary(d);
 
         // 워커 사용률 막대 — 한도 대비 얼마나 찼는지가 한눈에 보여야 한다
-        let workerPct = (w.total && w.limit) ? Math.min(100, Math.round(w.total * 100 / w.limit)) : 0;
+        // 막대도 active 기준이다. total 은 예열 풀 크기라 무부하에서도 8~16 이다.
+        let workerPct = (w.limit && w.active) ? Math.min(100, Math.round(w.active * 100 / w.limit)) : 0;
         let memPct = (m.percent === null || m.percent === undefined) ? 0 : Math.min(100, m.percent);
 
         let trackingRow = t.available === false
@@ -255,9 +260,10 @@ define([
             </div>` : ''}
             <ul class="pf-head-host-list">
                 ${row('fa-microchip', '워커',
-                    `${val(w.total)} <span class="pf-head-host-dim">/ ${val(w.limit)}</span>` +
+                    `${val(w.active)} <span class="pf-head-host-dim">/ ${val(w.limit)} 처리 중</span>` +
                     `<span class="pf-head-host-bar"><i style="width:${workerPct}%"></i></span>` +
-                    `<span class="pf-head-host-dim">실행 ${val(w.active)} · 대기 ${val(w.idle)}${w.queue ? ' · 큐 ' + w.queue : ''}</span>`)}
+                    `<span class="pf-head-host-dim" title="php-fpm 이 콜드스타트를 피하려고 미리 띄워둔 유휴 프로세스입니다. CPU 는 쓰지 않습니다.">대기 ${val(w.idle)}<span class="pf-head-host-hint">?</span></span>` +
+                    `<span class="pf-head-host-dim">풀 ${val(w.total)}${w.queue ? ' · 대기열 ' + w.queue : ''}</span>`)}
                 ${row('fa-memory', '메모리',
                     `${val(m.workingSetMb, 'MB')} <span class="pf-head-host-dim">/ ${val(m.limitMb, 'MB')}</span>` +
                     `<span class="pf-head-host-bar"><i style="width:${memPct}%"></i></span>` +
