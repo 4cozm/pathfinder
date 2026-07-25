@@ -123,10 +123,22 @@
     overflow-wrap: break-word;
   }
 
+  // 보조 텍스트. $gray-light(#63676a)는 이 패널 배경(#1d1d1d) 위에서 명암비가
+  // 약 2.9:1 로 WCAG AA(4.5:1)에 한참 못 미쳐 10px 에서는 사실상 안 보인다.
+  // ($gray-lighter 는 약 8.5:1) 값(흰색)과의 위계는 크기·굵기로 유지한다.
   .pf-head-host-dim {
-    color: $gray-light;
+    color: $gray-lighter;
     font-size: 10px;
     margin-left: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  // 헤드라인 옆 점수는 주변 주석이 아니라 읽히라고 두는 값이다.
+  .pf-head-host-score {
+    color: $teal-lightest;
+    font-size: 11px;
+    font-weight: normal;
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
 

@@ -106,13 +106,20 @@ class ServerStatus extends AbstractRestController {
     protected function getStatus() : array {
         $redis = $this->getRedis();
 
+        // pconnect 이후에 Redis 가 죽거나 AUTH 가 어긋나면 get() 이 RedisException 을 던진다.
+        // 이 엔드포인트는 이제 모든 클라이언트가 2분마다 치므로, 잡지 않으면
+        // Redis 순단이 곧 500 버스트가 된다. 캐시를 못 읽으면 그냥 새로 만들면 된다.
         if($redis){
-            $cached = $redis->get(self::CACHE_KEY);
-            if(is_string($cached) && $cached !== ''){
-                $decoded = json_decode($cached, true);
-                if(is_array($decoded)){
-                    return $decoded;
+            try{
+                $cached = $redis->get(self::CACHE_KEY);
+                if(is_string($cached) && $cached !== ''){
+                    $decoded = json_decode($cached, true);
+                    if(is_array($decoded)){
+                        return $decoded;
+                    }
                 }
+            }catch(\Throwable $e){
+                // 캐시 미스로 취급하고 계속 진행한다
             }
         }
 
@@ -167,13 +174,18 @@ class ServerStatus extends AbstractRestController {
      * @return string ok|warn|degraded|unknown
      */
     protected function level(?float $score, array $worker) : string {
+        // 큐가 쌓였다는 것은 이미 체감 지연이다. 점수는 히스테리시스 때문에 뒤늦게
+        // 따라오므로, 점수를 못 읽는 상황이라도 이 신호만으로 warn 을 띄운다.
+        // (예전에는 score 가 null 이면 곧장 unknown 이라 이 승격에 닿지 못했다)
+        $queued = (int)($worker['queue'] ?? 0) > 0;
+
         if(is_null($score)){
-            return 'unknown';
+            return $queued ? 'warn' : 'unknown';
         }
         if($score >= self::SCORE_DEGRADED){
             return 'degraded';
         }
-        if($score >= self::SCORE_WARN || (int)($worker['queue'] ?? 0) > 0){
+        if($score >= self::SCORE_WARN || $queued){
             return 'warn';
         }
 
@@ -188,7 +200,13 @@ class ServerStatus extends AbstractRestController {
         if(!$redis){
             return null;
         }
-        $score = $redis->get(BackpressureManager::KEY_P_SKIP);
+
+        try{
+            $score = $redis->get(BackpressureManager::KEY_P_SKIP);
+        }catch(\Throwable $e){
+            // 측정 불가는 0(한가함)이 아니라 null(모름)이다
+            return null;
+        }
 
         return ($score === false) ? null : (float)$score;
     }

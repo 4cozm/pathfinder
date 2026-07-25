@@ -61,6 +61,7 @@ define([
 
     let cache = null;                                                           // last payload
     let cacheAt = 0;                                                            // epoch(ms) the payload was received
+    let lastFetchAt = 0;                                                        // epoch(ms) of the last ATTEMPT (success or not)
     let inFlight = null;                                                        // de-dupe concurrent opens
 
     /**
@@ -96,6 +97,11 @@ define([
                 resolve(null);
             }).always(() => {
                 inFlight = null;
+                // 성공 여부와 무관하게 "마지막 시도" 시각을 남긴다.
+                // cacheAt(성공 시각)만 보면, 서버가 아파서 계속 실패하는 동안
+                // cacheAt 이 낡은 채로 멈춰 visibilitychange 조건이 항상 참이 되고
+                // 탭을 오갈 때마다 재요청한다 — 하필 박스가 이미 아픈 시점에.
+                lastFetchAt = Date.now();
             });
         });
 
@@ -200,7 +206,7 @@ define([
         return `
             <div class="pf-head-host-head">
                 <span class="txt-color ${levelColor}"><i class="fas fa-fw fa-circle"></i> ${levelText}</span>
-                <span class="pf-head-host-dim">score ${val(d.score)}</span>
+                <span class="pf-head-host-score">부하점수 ${val(d.score)}</span>
             </div>
             <ul class="pf-head-host-list">
                 ${row('fa-microchip', '워커',
@@ -234,6 +240,57 @@ define([
         let [color] = cache ? (LEVEL[cache.level] || LEVEL.unknown) : LEVEL.unknown;
         indicatorEl.find('.' + config.dotClass)
             .attr('class', 'fas fa-fw fa-circle txt-color ' + config.dotClass + ' ' + color);
+    };
+
+    /**
+     * 클립보드 복사.
+     *
+     * Util.copyToClipboard() 를 쓰지 않는다:
+     *  - 실패해도 reject 하지 않고 resolve({data:false}) 라 .then(성공,실패) 로는
+     *    실패를 알 수 없다
+     *  - 내부에서 navigator.permissions.query({name:'clipboard-write'}) 를 부르는데
+     *    이 권한 이름은 Firefox 등에서 지원되지 않아 query() 가 reject 하고,
+     *    거기에 .catch 가 없어 **프라미스가 영영 settle 되지 않는다** → 버튼이
+     *    아무 반응도 하지 않는다 (실제 증상)
+     *
+     * writeText 는 사용자 제스처 + https 컨텍스트면 권한 조회 없이 바로 동작한다.
+     * 구형/비보안 컨텍스트를 위해 textarea + execCommand 폴백을 둔다.
+     *
+     * @param text
+     * @returns {Promise<boolean>} 복사 성공 여부 (reject 하지 않는다)
+     */
+    let copyText = text => {
+        if(navigator.clipboard && navigator.clipboard.writeText){
+            return navigator.clipboard.writeText(text).then(() => true, () => fallbackCopy(text));
+        }
+
+        return Promise.resolve(fallbackCopy(text));
+    };
+
+    /**
+     * @param text
+     * @returns {boolean}
+     */
+    let fallbackCopy = text => {
+        let el = document.createElement('textarea');
+        el.value = text;
+        // 화면 밖으로 빼되 focus 는 받을 수 있어야 execCommand 가 동작한다
+        el.setAttribute('readonly', '');
+        el.style.position = 'fixed';
+        el.style.top = '-1000px';
+        document.body.appendChild(el);
+
+        let ok = false;
+        try{
+            el.select();
+            ok = document.execCommand('copy');
+        }catch(e){
+            ok = false;
+        }
+
+        document.body.removeChild(el);
+
+        return ok;
     };
 
     /**
@@ -320,7 +377,7 @@ define([
         // 기준은 cacheValid()(30초)가 아니라 refreshMs 다 — 30초로 잡으면 탭을 자주
         // 오가는 사람이 2분 주기보다 오히려 더 많이 요청하게 된다.
         $(document).on('visibilitychange.hostStatus', () => {
-            if(document.visibilityState === 'visible' && (Date.now() - cacheAt) > config.refreshMs){
+            if(document.visibilityState === 'visible' && (Date.now() - lastFetchAt) > config.refreshMs){
                 refreshDot();
             }
         });
@@ -331,10 +388,16 @@ define([
                 return;
             }
             let btn = $(this);
-            Util.copyToClipboard(asReportText(cache)).then(
-                () => btn.html('<i class="fas fa-fw fa-check"></i> 복사됨'),
-                () => btn.html('<i class="fas fa-fw fa-times"></i> 실패')
-            );
+            let original = btn.html();
+
+            copyText(asReportText(cache)).then(ok => {
+                btn.html(ok
+                    ? '<i class="fas fa-fw fa-check"></i> 복사됨'
+                    : '<i class="fas fa-fw fa-times"></i> 실패');
+                // 원래 라벨로 되돌린다 — 패널은 계속 열려 있을 수 있어서
+                // "복사됨"이 박제되면 다음에 눌렀는지 안 눌렀는지 알 수 없다
+                setTimeout(() => btn.html(original), 1500);
+            });
         });
     };
 
