@@ -66,25 +66,44 @@
     }
   }
 
+  // ⚠️ 여기서는 fa-ul/fa-li 를 쓰지 않는다.
+  // fa-li 는 position:absolute; left:-2em 으로 fa-ul 의 좌측 여백에 얹히는 구조라,
+  // 폭이 300px 로 고정된 패널 안에서는 em 상속(패널 11px vs 아이콘 자체 font-size)과
+  // 라이브러리 오버라이드(_landing.scss 의 @extend .fa-li, .fa-fw 의 width)에 따라
+  // 아이콘이 좌측으로 삐져나갈 수 있다. 실제로 그렇게 어긋났다.
+  // 절대배치 대신 flex 로 두면 어떤 상속 상태에서도 아이콘이 행 안에 머문다.
   .pf-head-host-list {
-    // ⚠️ margin-left 를 지우지 말 것. fa-li 는 position:absolute; left:-2em 이라
-    // fa-ul 의 좌측 여백(2.5em)이 아이콘이 놓일 자리다. margin:0 으로 덮으면
-    // 아이콘이 패널 밖으로 튀어나간다.
-    margin: 0 0 0 2em;
+    margin: 0;
     padding: 0;
-
-    .fa-li {
-      color: $gray-light;
-      font-size: 11px;
-    }
+    list-style: none;
   }
 
   .pf-head-host-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
     margin-bottom: 8px;
 
     &:last-child {
       margin-bottom: 0;
     }
+  }
+
+  .pf-head-host-icon {
+    flex: 0 0 auto;
+    width: 14px;
+    margin-top: 1px;
+
+    color: $gray-light;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .pf-head-host-body {
+    // flex 자식의 기본값은 min-width:auto 라 내용이 길면 컨테이너를 밀어낸다.
+    // 0 으로 낮춰야 300px 안에서 줄바꿈이 동작한다(긴 시스템명 등).
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .pf-head-host-label {
@@ -100,6 +119,8 @@
     color: $white;
     // 숫자가 갱신될 때 자릿수 때문에 흔들리지 않게
     font-variant-numeric: tabular-nums;
+    // 예상 못 한 긴 문자열이 패널 폭을 밀어내지 못하게
+    overflow-wrap: break-word;
   }
 
   .pf-head-host-dim {
@@ -136,6 +157,12 @@
     padding-top: 7px;
     margin-top: 9px;
     border-top: 1px solid $gray-dark;
+
+    // 측정 시각 문자열이 길어져도 복사 버튼을 밀어내지 않게
+    > span {
+      min-width: 0;
+      margin-left: 0;
+    }
   }
 
   .pf-head-host-copy {

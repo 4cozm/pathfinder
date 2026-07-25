@@ -138,9 +138,11 @@ define([
      */
     let row = (icon, label, valueHtml) => `
         <li class="${config.rowClass}">
-            <i class="fa-li fas fa-fw ${icon}"></i>
-            <span class="pf-head-host-label">${label}</span>
-            <span class="pf-head-host-value">${valueHtml}</span>
+            <i class="fas fa-fw ${icon} pf-head-host-icon"></i>
+            <div class="pf-head-host-body">
+                <span class="pf-head-host-label">${label}</span>
+                <span class="pf-head-host-value">${valueHtml}</span>
+            </div>
         </li>`;
 
     /**
@@ -200,7 +202,7 @@ define([
                 <span class="txt-color ${levelColor}"><i class="fas fa-fw fa-circle"></i> ${levelText}</span>
                 <span class="pf-head-host-dim">score ${val(d.score)}</span>
             </div>
-            <ul class="fa-ul pf-head-host-list">
+            <ul class="pf-head-host-list">
                 ${row('fa-microchip', '워커',
                     `${val(w.total)} <span class="pf-head-host-dim">/ ${val(w.limit)}</span>` +
                     `<span class="pf-head-host-bar"><i style="width:${workerPct}%"></i></span>` +
