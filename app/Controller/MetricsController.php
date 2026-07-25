@@ -18,6 +18,7 @@ namespace Exodus4D\Pathfinder\Controller;
 
 use Exodus4D\Pathfinder\Lib\CgroupMemory;
 use Exodus4D\Pathfinder\Lib\Config;
+use Exodus4D\Pathfinder\Lib\LocalStatus;
 use Exodus4D\Pathfinder\Lib\Metrics;
 
 class MetricsController {
@@ -235,22 +236,14 @@ class MetricsController {
 
     /**
      * fetch a status page from the local internal vhost
+     * -> 취득부는 Lib\LocalStatus 로 옮겼다. 서버 상태 API(Api\Rest\ServerStatus)가
+     *    같은 값을 읽는데, 복붙해두면 타임아웃/경로가 갈라져 "메트릭과 상태 화면의
+     *    숫자가 다르다"는 추적 불가능한 버그가 된다.
      * @param string $path
      * @return string|null
      */
     protected function fetchLocal(string $path) : ?string {
-        try {
-            $context = stream_context_create([
-                'http' => [
-                    'timeout' => self::STATUS_FETCH_TIMEOUT,
-                    'ignore_errors' => true,
-                ],
-            ]);
-            $body = @file_get_contents('http://127.0.0.1:8081' . $path, false, $context);
-            return ($body === false) ? null : $body;
-        } catch (\Throwable $e) {
-            return null;
-        }
+        return LocalStatus::fetch($path);
     }
 
     /**
