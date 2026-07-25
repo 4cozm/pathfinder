@@ -152,6 +152,45 @@ define([
         </li>`;
 
     /**
+     * 지금 가장 많이 차 있는 자원과 그 사용률.
+     *
+     * 헤드라인 숫자로 backpressure score 를 쓰지 않는 이유:
+     * 그 점수는 "폴링을 덜어낼지" 판단하는 **스로틀 트리거**지 건강도 게이지가 아니다.
+     * 워커는 한도의 50%(=16개)를 넘어야, 메모리는 워킹셋이 70%(=840MB)를 넘어야,
+     * 지연은 ESI 평균이 2초를 넘어야 비로소 0 을 벗어나고, 합산값도 5 미만이면
+     * 0 으로 스냅된다. 평상시(워커 1~3, 메모리 13%)에는 정의상 항상 0 이라
+     * "계산이 안 되는 값"으로 보인다. 실제로 스톰 때만 움직인다(7/24 max 20).
+     *
+     * 대신 항상 움직이고 병목이 어디인지도 알려주는 값을 보여준다.
+     *
+     * @param d
+     * @returns {{pct: number|null, label: string}}
+     */
+    let loadSummary = d => {
+        let w = d.worker || {};
+        let m = d.memory || {};
+        let c = d.cpu || {};
+        let parts = [];
+
+        if(w.total && w.limit){
+            parts.push({pct: Math.round(w.total * 100 / w.limit), label: '워커'});
+        }
+        if(m.percent !== null && m.percent !== undefined){
+            parts.push({pct: Math.round(m.percent), label: '메모리'});
+        }
+        if(c.perCore !== null && c.perCore !== undefined){
+            // perCore 1.0 = 코어가 꽉 찬 상태
+            parts.push({pct: Math.round(c.perCore * 100), label: 'CPU'});
+        }
+
+        if(!parts.length){
+            return {pct: null, label: ''};
+        }
+
+        return parts.reduce((a, b) => (b.pct > a.pct) ? b : a);
+    };
+
+    /**
      * 슬랙에 그대로 붙일 수 있는 텍스트. 보고용이라 측정 시각을 반드시 포함한다.
      * @param d
      * @returns {string}
@@ -163,7 +202,8 @@ define([
         let t = d.tracking || {};
 
         return [
-            `[패파 서버 상태] ${(LEVEL[d.level] || LEVEL.unknown)[1]} (score ${val(d.score)})`,
+            `[패파 서버 상태] ${(LEVEL[d.level] || LEVEL.unknown)[1]} · 부하 ${val(loadSummary(d).pct, '%')} (${loadSummary(d).label})`,
+            `스로틀: ${d.score > 0 ? '작동 중 (점수 ' + d.score + '/100)' : '없음 (점수 0)'}`,
             `측정: ${d.measuredAt ? d.measuredAt.kst : '-'} / ${d.measuredAt ? d.measuredAt.utc : '-'}`,
             `워커: ${val(w.active)} 실행 + ${val(w.idle)} 대기 = ${val(w.total)} / 한도 ${val(w.limit)}, 큐 ${val(w.queue)}`,
             `메모리: ${val(m.workingSetMb, 'MB')} / ${val(m.limitMb, 'MB')} (${val(m.percent, '%')})`,
@@ -189,6 +229,7 @@ define([
         let c = d.cpu || {};
         let t = d.tracking || {};
         let [trackColor, trackText] = TRACKING[t.state] || TRACKING.none;
+        let load = loadSummary(d);
 
         // 워커 사용률 막대 — 한도 대비 얼마나 찼는지가 한눈에 보여야 한다
         let workerPct = (w.total && w.limit) ? Math.min(100, Math.round(w.total * 100 / w.limit)) : 0;
@@ -206,8 +247,12 @@ define([
         return `
             <div class="pf-head-host-head">
                 <span class="txt-color ${levelColor}"><i class="fas fa-fw fa-circle"></i> ${levelText}</span>
-                <span class="pf-head-host-score">부하점수 ${val(d.score)}</span>
+                <span class="pf-head-host-score">부하 ${val(load.pct, '%')}<span class="pf-head-host-dim">${load.label}</span></span>
             </div>
+            ${d.score > 0 ? `<div class="pf-head-host-throttle">
+                <i class="fas fa-fw fa-exclamation-triangle"></i>
+                스로틀 작동 중 (점수 ${val(d.score)}/100) — 위치 폴링이 일부 생략됩니다
+            </div>` : ''}
             <ul class="pf-head-host-list">
                 ${row('fa-microchip', '워커',
                     `${val(w.total)} <span class="pf-head-host-dim">/ ${val(w.limit)}</span>` +
