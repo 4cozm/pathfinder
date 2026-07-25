@@ -43,11 +43,60 @@ class ServerStatus extends AbstractRestController {
     const SCORE_DEGRADED = 30;
 
     /**
+     * 내 위치 갱신이 이 초를 넘으면 "지연", getLogInactiveTime()(기본 180s)을 넘으면 "끊김".
+     * 폴링 주기 5s / ESI location 캐시 5s 기준이라, 30s 는 여러 번 연속 실패했다는 뜻이다.
+     */
+    const TRACKING_LAG_SECONDS = 30;
+
+    /**
      * GET /api/rest/ServerStatus
      * @param \Base $f3
      */
     public function get(\Base $f3){
-        $this->out($this->getStatus());
+        $status = $this->getStatus();
+
+        // 트래킹 신선도는 **캐릭터마다 다르다**. 서버 공통 캐시(PF_SERVER_STATUS)에
+        // 넣으면 먼저 호출한 사람의 값이 30초 동안 남들에게 그대로 보인다.
+        // 그래서 캐시 밖에서 매 요청 계산한다 (조회 1건이라 비용도 무시할 수준).
+        $status['tracking'] = $this->trackingStatus();
+
+        $this->out($status);
+    }
+
+    /**
+     * 내 캐릭터 위치 로그가 얼마나 신선한가.
+     * "웜홀 이동이 반영되고 있나?" 를 유저가 스스로 판단할 수 있게 하는 값이다 —
+     * 지금까지는 안 그려지면 원인을 알 방법이 없었다.
+     * @return array
+     */
+    protected function trackingStatus() : array {
+        if(is_null($character = $this->getCharacter())){
+            return ['available' => false];
+        }
+
+        if(is_null($log = $character->getLog()) || empty($log->updated)){
+            // 로그인은 했지만 아직 위치가 잡히지 않은 상태 (게임 미접속 등)
+            return ['available' => true, 'state' => 'none', 'ageSeconds' => null, 'systemName' => null];
+        }
+
+        $age      = max(0, time() - strtotime($log->updated));
+        $inactive = \Exodus4D\Pathfinder\Model\Pathfinder\CharacterModel::getLogInactiveTime();
+
+        if($age >= $inactive){
+            $state = 'stale';
+        }elseif($age >= self::TRACKING_LAG_SECONDS){
+            $state = 'lag';
+        }else{
+            $state = 'ok';
+        }
+
+        return [
+            'available'            => true,
+            'state'                => $state,
+            'ageSeconds'           => $age,
+            'inactiveAfterSeconds' => $inactive,
+            'systemName'           => $log->systemName ? : null,
+        ];
     }
 
     /**

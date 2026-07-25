@@ -15,6 +15,7 @@ define([
     'text!templates/layout/header_map.html',
     'text!templates/layout/footer_map.html',
     'layout/header_tz',
+    'layout/header_host_status',
     'dialog/notification',
     'dialog/stats',
     'dialog/map_info',
@@ -28,7 +29,7 @@ define([
     'dialog/credit',
     'xEditable',
     'app/module_map'
-], ($, Init, Util, Counter, Logging, Mustache, MapUtil, MapContextMenu, SlideBars, TplHead, TplFooter, HeaderTz) => {
+], ($, Init, Util, Counter, Logging, Mustache, MapUtil, MapContextMenu, SlideBars, TplHead, TplFooter, HeaderTz, HeaderHostStatus) => {
 
     'use strict';
 
@@ -51,6 +52,7 @@ define([
 
         headActiveUsersClass: 'pf-head-active-users',                           // class for "active users" link
         headProgramStatusClass: 'pf-head-program-status',                       // class for "program status" notification
+        headHostStatusClass: 'pf-head-host-status',                             // class for host status indicator (dot -> detail panel)
 
         headMaxLocationHistoryBreadcrumbs: 3,                                   // max breadcrumb count for character log history
 
@@ -499,7 +501,8 @@ define([
                 userCharacterImageClass:    config.userCharacterImageClass,
                 usersActiveClass:           config.headActiveUsersClass,
                 userLocationId:             Util.config.headUserLocationId,
-                mapTrackingId:              Util.config.headMapTrackingId
+                mapTrackingId:              Util.config.headMapTrackingId,
+                hostStatusClass:            config.headHostStatusClass
             };
 
             pageEl.insertAdjacentHTML('afterbegin', Mustache.render(TplHead, moduleData));
@@ -612,6 +615,9 @@ define([
 
             // TZ activity strip ("most active timezone")
             HeaderTz.initTzStrip(document.getElementById(Util.config.headTzStripId));
+
+            // host status indicator (lazy: no request until the dot is clicked)
+            HeaderHostStatus.initHostStatus($('.' + config.headHostStatusClass));
 
             // init all tooltips
             initHeaderTooltips($('#' + config.pageHeaderId));
