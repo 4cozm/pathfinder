@@ -7,13 +7,20 @@
  * 돌아가는 우리 박스다.
  *
  * 요청 정책:
- *  - 점 색을 칠하기 위해 **로드 후 1회만** 받아온다. 점이 회색으로 떠 있으면
+ *  - 점 색을 칠하기 위해 로드 후 1회 받아온다. 점이 회색으로 떠 있으면
  *    "한눈에 보는 상태"라는 목적 자체가 사라진다(꺼진 것처럼 보인다)
- *  - 상세는 열 때 받아오되, 서버가 알려준 cacheTtl 안이면 그 값을 재사용한다
- *  - **폴링하지 않는다.** 폴링 루프가 이 2코어 박스에 요청 스톰을 만든 전례가 있다
- *    (memo toast, 2026-07-24: 하루 20,209콜 = 전체 요청의 34%)
  *  - 첫 요청은 페이지 로드 버스트가 지나간 뒤로 미룬다. 상태 표시는 급하지 않은데
  *    로드 순간은 번들/템플릿/맵 데이터가 몰리는 가장 나쁜 타이밍이다
+ *  - 이후 2분마다 점 색만 갱신한다. **한 번 칠하고 끝내면 안 된다** — 탭을 하루
+ *    종일 열어두는 사용 패턴이라, 굳어버린 초록 점은 없느니만 못한 거짓 신호가 된다
+ *  - 상세는 열 때 받아오되, 서버가 알려준 cacheTtl 안이면 그 값을 재사용한다
+ *
+ * 갱신 주기를 2분으로 잡은 근거 (이 박스는 2코어다):
+ *  동시 접속 ~15명 × 30회/시간 = 450 req/시간. 현재 총 트래픽이 ~4,500 req/시간이라
+ *  약 +10%. 서버는 30초 캐시(PF_SERVER_STATUS)라 실제 계산은 분당 2회 이하이고
+ *  나머지는 Redis 조회다. 더 짧게 잡으면 세션 처리 비용이 그대로 곱해진다.
+ *  숨은 탭은 아예 건너뛰므로 실제 비용은 이보다 낮다 — 2026-07-24 에 폴링 루프가
+ *  이 박스에 요청 스톰(하루 20,209콜 = 전체의 34%)을 만든 전례가 있어 보수적으로 잡는다.
  */
 
 define([
@@ -32,7 +39,8 @@ define([
 
         url: '/api/rest/ServerStatus',
         fetchTimeoutMs: 8000,                                                   // give up rather than hang the panel open with a spinner
-        initialFetchDelayMs: 3000                                               // stay off the page-load burst (bundle/templates/map data)
+        initialFetchDelayMs: 3000,                                              // stay off the page-load burst (bundle/templates/map data)
+        refreshMs: 120 * 1000                                                   // dot refresh (visible tabs only) — see cost note below
     };
 
     // level -> [dot color class, label]
@@ -293,11 +301,27 @@ define([
             panelEl.hasClass(config.panelOpenClass) ? close() : open();
         });
 
-        // 점 색을 칠하기 위한 최초 1회 조회 (열지 않아도 상태가 보여야 한다).
-        // 로드 버스트를 피해 잠깐 미룬 뒤 한 번만 부른다 — 이후 갱신은 패널을 열 때뿐이다.
-        setTimeout(() => {
+        // 점 색 갱신 -------------------------------------------------------------------------------------------------
+        // 숨은 탭에서는 건너뛴다. 백그라운드 탭의 점은 아무도 보지 않으므로 순수 낭비다.
+        let refreshDot = () => {
+            if(document.visibilityState === 'hidden'){
+                return;
+            }
             fetchStatus().then(() => renderDot(indicatorEl));
-        }, config.initialFetchDelayMs);
+        };
+
+        // 로드 버스트를 피해 잠깐 미룬 뒤 최초 1회
+        setTimeout(refreshDot, config.initialFetchDelayMs);
+        setInterval(refreshDot, config.refreshMs);
+
+        // 숨어 있는 동안 주기를 건너뛰었으므로, 돌아왔을 때 값이 낡았으면 즉시 갱신한다.
+        // 기준은 cacheValid()(30초)가 아니라 refreshMs 다 — 30초로 잡으면 탭을 자주
+        // 오가는 사람이 2분 주기보다 오히려 더 많이 요청하게 된다.
+        $(document).on('visibilitychange.hostStatus', () => {
+            if(document.visibilityState === 'visible' && (Date.now() - cacheAt) > config.refreshMs){
+                refreshDot();
+            }
+        });
 
         panelEl.on('click', '.' + config.copyClass, function(e){
             e.preventDefault();
