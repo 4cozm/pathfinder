@@ -246,13 +246,14 @@ define([
         // 코어별 사용률 막대. usage 는 두 스냅샷의 차이라 첫 호출 직후엔 없을 수 있다
         // (그때는 loadavg 로 폴백해 값 자체는 항상 보인다)
         let cu = (c.usage && Array.isArray(c.usage.cores) && c.usage.cores.length) ? c.usage : null;
+        // 막대들은 반드시 전용 행 컨테이너에 감싼다. 감싸지 않고 텍스트 사이에
+        // inline 으로 흘리면 값 텍스트 옆에 하나, 다음 줄에 하나로 제멋대로 감긴다.
         let coreBars = cu
-            ? cu.cores.map(pct =>
-                // 폭은 코어 수에 따라 나눈다 (CSS 에 50% 로 박으면 2코어 전제가 된다)
-                `<span class="pf-head-host-bar pf-head-host-bar--core" style="width:calc(${(100 / cu.cores.length).toFixed(1)}% - 3px)">` +
-                    `<i class="pf-head-host-bar--active" style="width:${Math.min(100, Math.round(pct))}%"></i>` +
-                `</span>`
-              ).join('')
+            ? `<span class="pf-head-host-cores">` +
+                cu.cores.map(pct =>
+                    `<span class="pf-head-host-bar"><i class="pf-head-host-bar--active" style="width:${Math.min(100, Math.round(pct))}%"></i></span>`
+                ).join('') +
+              `</span>`
             : '';
 
         // 워커 사용률 막대 — 한도 대비 얼마나 찼는지가 한눈에 보여야 한다

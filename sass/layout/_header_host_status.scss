@@ -204,15 +204,17 @@
       background: rgba($teal-lightest, 0.28);
     }
 
-    // 코어별 막대 — 한 줄에 코어 수만큼 나란히 (폭은 JS 가 코어 수로 나눠 인라인 지정)
-    &.pf-head-host-bar--core {
-      display: inline-flex;
-      margin-right: 3px;
-      vertical-align: middle;
+  }
 
-      &:last-of-type {
-        margin-right: 0;
-      }
+  // 코어별 막대의 행 컨테이너 — 코어 수만큼 균등 분할해 한 줄에 나란히
+  .pf-head-host-cores {
+    display: flex;
+    gap: 3px;
+    margin: 3px 0 2px;
+
+    > .pf-head-host-bar {
+      flex: 1 1 0;
+      margin: 0;
     }
   }
 
