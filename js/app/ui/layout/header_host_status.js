@@ -6,9 +6,14 @@
  * 가리킨다(sticky panel 의 server_panel). 여기서 보여주는 것은 Pathfinder 가
  * 돌아가는 우리 박스다.
  *
- * lazy: 페이지 로드 시에는 아무 요청도 하지 않는다. 처음 열 때 한 번 받아오고
- * 그 뒤로는 서버가 알려준 cacheTtl 동안 재사용한다. 폴링하지 않는다 —
- * 폴링 루프가 2코어 박스에 요청 스톰을 만든 전례가 있다(memo toast, 2026-07-24).
+ * 요청 정책:
+ *  - 점 색을 칠하기 위해 **로드 후 1회만** 받아온다. 점이 회색으로 떠 있으면
+ *    "한눈에 보는 상태"라는 목적 자체가 사라진다(꺼진 것처럼 보인다)
+ *  - 상세는 열 때 받아오되, 서버가 알려준 cacheTtl 안이면 그 값을 재사용한다
+ *  - **폴링하지 않는다.** 폴링 루프가 이 2코어 박스에 요청 스톰을 만든 전례가 있다
+ *    (memo toast, 2026-07-24: 하루 20,209콜 = 전체 요청의 34%)
+ *  - 첫 요청은 페이지 로드 버스트가 지나간 뒤로 미룬다. 상태 표시는 급하지 않은데
+ *    로드 순간은 번들/템플릿/맵 데이터가 몰리는 가장 나쁜 타이밍이다
  */
 
 define([
@@ -26,7 +31,8 @@ define([
         copyClass: 'pf-head-host-copy',                                         // class for "copy for report" button
 
         url: '/api/rest/ServerStatus',
-        fetchTimeoutMs: 8000                                                    // give up rather than hang the panel open with a spinner
+        fetchTimeoutMs: 8000,                                                   // give up rather than hang the panel open with a spinner
+        initialFetchDelayMs: 3000                                               // stay off the page-load burst (bundle/templates/map data)
     };
 
     // level -> [dot color class, label]
@@ -141,11 +147,11 @@ define([
         let t = d.tracking || {};
 
         return [
-            `[Pathfinder 호스트 상태] ${(LEVEL[d.level] || LEVEL.unknown)[1]} (score ${val(d.score)})`,
+            `[패파 서버 상태] ${(LEVEL[d.level] || LEVEL.unknown)[1]} (score ${val(d.score)})`,
             `측정: ${d.measuredAt ? d.measuredAt.kst : '-'} / ${d.measuredAt ? d.measuredAt.utc : '-'}`,
             `워커: ${val(w.active)} 실행 + ${val(w.idle)} 대기 = ${val(w.total)} / 한도 ${val(w.limit)}, 큐 ${val(w.queue)}`,
             `메모리: ${val(m.workingSetMb, 'MB')} / ${val(m.limitMb, 'MB')} (${val(m.percent, '%')})`,
-            `CPU(호스트): load ${val(c.load1)} / ${val(c.cores)}코어 = 코어당 ${val(c.perCore)}` +
+            `CPU(박스 전체): load ${val(c.load1)} / ${val(c.cores)}코어 = 코어당 ${val(c.perCore)}` +
                 (c.pressure ? `, 대기율 ${c.pressure.avg60}%` : ''),
             `내 트래킹: ${(TRACKING[t.state] || TRACKING.none)[1]}` +
                 (t.ageSeconds !== null && t.ageSeconds !== undefined ? ` (${humanAge(t.ageSeconds)})` : '')
@@ -286,6 +292,12 @@ define([
             e.stopPropagation();
             panelEl.hasClass(config.panelOpenClass) ? close() : open();
         });
+
+        // 점 색을 칠하기 위한 최초 1회 조회 (열지 않아도 상태가 보여야 한다).
+        // 로드 버스트를 피해 잠깐 미룬 뒤 한 번만 부른다 — 이후 갱신은 패널을 열 때뿐이다.
+        setTimeout(() => {
+            fetchStatus().then(() => renderDot(indicatorEl));
+        }, config.initialFetchDelayMs);
 
         panelEl.on('click', '.' + config.copyClass, function(e){
             e.preventDefault();

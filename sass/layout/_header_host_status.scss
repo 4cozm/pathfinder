@@ -31,7 +31,8 @@
   z-index: 1100; // above header, same layer as .pf-head-tz-tip
   display: none;
 
-  width: 280px;
+  // fa-ul 의 좌측 아이콘 여백(2.5em)까지 포함한 폭
+  width: 300px;
   padding: 10px 12px;
 
   background: $gray-darkest;
@@ -66,7 +67,10 @@
   }
 
   .pf-head-host-list {
-    margin: 0;
+    // ⚠️ margin-left 를 지우지 말 것. fa-li 는 position:absolute; left:-2em 이라
+    // fa-ul 의 좌측 여백(2.5em)이 아이콘이 놓일 자리다. margin:0 으로 덮으면
+    // 아이콘이 패널 밖으로 튀어나간다.
+    margin: 0 0 0 2em;
     padding: 0;
 
     .fa-li {
