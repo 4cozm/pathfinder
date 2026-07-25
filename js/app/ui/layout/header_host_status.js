@@ -179,8 +179,10 @@ define([
         if(w.limit && (w.active !== null && w.active !== undefined)){
             parts.push({pct: Math.round(w.active * 100 / w.limit), label: '워커'});
         }
-        if(m.percent !== null && m.percent !== undefined){
-            parts.push({pct: Math.round(m.percent), label: '메모리'});
+        // 컨테이너가 아니라 박스 전체 기준. 이 서버에는 pf 외에 pfdb/redis/pf-socket/
+        // traefik 이 같이 살아서, 컨테이너만 보면 박스가 차오르는 것을 놓친다.
+        if(m.host && m.host.percent !== null && m.host.percent !== undefined){
+            parts.push({pct: Math.round(m.host.percent), label: '메모리'});
         }
         if(c.perCore !== null && c.perCore !== undefined){
             // perCore 1.0 = 코어가 꽉 찬 상태
@@ -209,8 +211,9 @@ define([
             `[패파 서버 상태] ${(LEVEL[d.level] || LEVEL.unknown)[1]} · 부하 ${val(loadSummary(d).pct, '%')} (${loadSummary(d).label})`,
             `스로틀: ${d.score > 0 ? '작동 중 (점수 ' + d.score + '/100)' : '없음 (점수 0)'}`,
             `측정: ${d.measuredAt ? d.measuredAt.kst : '-'} / ${d.measuredAt ? d.measuredAt.utc : '-'}`,
-            `워커: 처리 중 ${val(w.active)} / 한도 ${val(w.limit)} (예열 대기 ${val(w.idle)}, 풀 ${val(w.total)}, 대기열 ${val(w.queue)})`,
-            `메모리: ${val(m.workingSetMb, 'MB')} / ${val(m.limitMb, 'MB')} (${val(m.percent, '%')})`,
+            `워커: 구동중 ${val(w.active)} / ${val(w.limit)} (예비 ${val(w.idle)}, 대기열 ${val(w.queue)})`,
+            `메모리(박스 전체): ${val((m.host||{}).usedMb, 'MB')} / ${val((m.host||{}).totalMb, 'MB')} 사용, 여유 ${val((m.host||{}).availableMb, 'MB')}`,
+            `메모리(패파 컨테이너): ${val((m.container||{}).workingSetMb, 'MB')} / ${val((m.container||{}).limitMb, 'MB')}`,
             `CPU(박스 전체): load ${val(c.load1)} / ${val(c.cores)}코어 = 코어당 ${val(c.perCore)}` +
                 (c.pressure ? `, 대기율 ${c.pressure.avg60}%` : ''),
             `내 트래킹: ${(TRACKING[t.state] || TRACKING.none)[1]}` +
@@ -236,9 +239,15 @@ define([
         let load = loadSummary(d);
 
         // 워커 사용률 막대 — 한도 대비 얼마나 찼는지가 한눈에 보여야 한다
-        // 막대도 active 기준이다. total 은 예열 풀 크기라 무부하에서도 8~16 이다.
-        let workerPct = (w.limit && w.active) ? Math.min(100, Math.round(w.active * 100 / w.limit)) : 0;
-        let memPct = (m.percent === null || m.percent === undefined) ? 0 : Math.min(100, m.percent);
+        // 막대는 구동중(active) / 예비(idle) 두 칸. total 은 예열된 풀 크기라
+        // 무부하에서도 8~16 이므로 total 로 재면 안 논다.
+        let workerPct     = (w.limit && w.active) ? Math.min(100, Math.round(w.active * 100 / w.limit)) : 0;
+        let workerIdlePct = (w.limit && w.idle)   ? Math.min(100 - workerPct, Math.round(w.idle * 100 / w.limit)) : 0;
+        let workerFree    = (w.limit && (w.total !== null && w.total !== undefined)) ? Math.max(0, w.limit - w.total) : null;
+        let mh = (m.host || {});
+        let mc = (m.container || {});
+        // 막대는 박스 전체 기준 (컨테이너는 보조 표기)
+        let memPct = (mh.percent === null || mh.percent === undefined) ? 0 : Math.min(100, mh.percent);
 
         let trackingRow = t.available === false
             ? ''
@@ -260,14 +269,19 @@ define([
             </div>` : ''}
             <ul class="pf-head-host-list">
                 ${row('fa-microchip', '워커',
-                    `${val(w.active)} <span class="pf-head-host-dim">/ ${val(w.limit)} 처리 중</span>` +
-                    `<span class="pf-head-host-bar"><i style="width:${workerPct}%"></i></span>` +
-                    `<span class="pf-head-host-dim" title="php-fpm 이 콜드스타트를 피하려고 미리 띄워둔 유휴 프로세스입니다. CPU 는 쓰지 않습니다.">대기 ${val(w.idle)}<span class="pf-head-host-hint">?</span></span>` +
-                    `<span class="pf-head-host-dim">풀 ${val(w.total)}${w.queue ? ' · 대기열 ' + w.queue : ''}</span>`)}
+                    `${val(w.active)} <span class="pf-head-host-dim">/ ${val(w.limit)} 구동중</span>` +
+                    // 막대를 구동중 / 예비 두 칸으로 나눠 색으로 구분한다.
+                    // 물음표 툴팁으로 설명해야 하는 UI 는 이미 진 것이다 — 용어가 자명하면 된다.
+                    `<span class="pf-head-host-bar">` +
+                        `<i class="pf-head-host-bar--active" style="width:${workerPct}%"></i>` +
+                        `<i class="pf-head-host-bar--idle" style="width:${workerIdlePct}%"></i>` +
+                    `</span>` +
+                    `<span class="pf-head-host-dim">예비 ${val(w.idle)} · 여유 ${val(workerFree)}${w.queue ? ' · 대기열 ' + w.queue : ''}</span>`)}
                 ${row('fa-memory', '메모리',
-                    `${val(m.workingSetMb, 'MB')} <span class="pf-head-host-dim">/ ${val(m.limitMb, 'MB')}</span>` +
+                    `${val(mh.usedMb, 'MB')} <span class="pf-head-host-dim">/ ${val(mh.totalMb, 'MB')} 사용</span>` +
                     `<span class="pf-head-host-bar"><i style="width:${memPct}%"></i></span>` +
-                    `<span class="pf-head-host-dim">${val(m.percent, '%')}</span>`)}
+                    `<span class="pf-head-host-dim">여유 ${val(mh.availableMb, 'MB')}` +
+                        `${mc.available ? ` · 패파 ${val(mc.workingSetMb, 'MB')}/${val(mc.limitMb, 'MB')}` : ''}</span>`)}
                 ${row('fa-tachometer-alt', 'CPU',
                     `${val(c.load1)} <span class="pf-head-host-dim">/ ${val(c.cores)}코어</span>` +
                     `<span class="pf-head-host-dim">코어당 ${val(c.perCore)}${c.pressure ? ' · 대기율 ' + c.pressure.avg60 + '%' : ''}</span>`)}

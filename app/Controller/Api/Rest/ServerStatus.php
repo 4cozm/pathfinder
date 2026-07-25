@@ -245,17 +245,24 @@ class ServerStatus extends AbstractRestController {
         // readLimitBytes() 가 이미 정규화한다 (미설정/무제한 → null)
         $limit      = CgroupMemory::readLimitBytes();
 
-        if(is_null($workingSet)){
-            return ['available' => false];
-        }
+        // 박스 전체. 이 서버에는 pf 말고도 pfdb(900MB)·redis(320MB)·pf-socket(200MB)·
+        // traefik 이 같이 산다. "서버 메모리가 괜찮냐"는 질문의 답은 컨테이너 하나가
+        // 아니라 호스트 쪽이고, 컨테이너 값만 보면 박스가 꽉 차가는 것을 놓친다.
+        $host = HostLoad::memory();
 
         return [
-            'available'     => true,
-            'workingSetMb'  => (int)round($workingSet / 1048576),
-            'limitMb'       => is_null($limit) ? null : (int)round($limit / 1048576),
-            'percent'       => is_null($limit) || $limit <= 0
-                ? null
-                : round($workingSet * 100 / $limit, 1),
+            'host'      => $host,
+            'container' => is_null($workingSet)
+                ? ['available' => false]
+                : [
+                    'available'    => true,
+                    'name'         => '패파',
+                    'workingSetMb' => (int)round($workingSet / 1048576),
+                    'limitMb'      => is_null($limit) ? null : (int)round($limit / 1048576),
+                    'percent'      => is_null($limit) || $limit <= 0
+                        ? null
+                        : round($workingSet * 100 / $limit, 1),
+                ],
         ];
     }
 

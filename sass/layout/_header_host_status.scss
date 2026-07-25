@@ -174,10 +174,12 @@
     line-height: 1.4;
   }
 
-  // 사용률 막대 — 한도 대비 얼마나 찼는지가 숫자보다 먼저 읽혀야 한다
+  // 사용률 막대 — 한도 대비 얼마나 찼는지가 숫자보다 먼저 읽혀야 한다.
+  // 워커는 두 칸(구동중 / 예비)으로 나뉘고 나머지 빈 공간이 여유다.
+  // 색으로 구분되면 물음표 툴팁이 필요 없다.
   .pf-head-host-bar {
-    display: block;
-    height: 3px;
+    display: flex;
+    height: 4px;
     margin: 3px 0 2px;
 
     background: $gray-dark;
@@ -189,6 +191,17 @@
       height: 100%;
       background: $teal-lightest;
       @include transition(width 0.4s ease);
+    }
+
+    // 구동중 — 실제로 요청을 처리하는 중
+    > i.pf-head-host-bar--active {
+      background: $teal-lightest;
+    }
+
+    // 예비 — 켜져 있지만 일하지 않는 상태. 같은 색 계열의 옅은 톤이라
+    // "같은 자원인데 아직 안 쓰는 중"이 색만으로 읽힌다.
+    > i.pf-head-host-bar--idle {
+      background: rgba($teal-lightest, 0.28);
     }
   }
 

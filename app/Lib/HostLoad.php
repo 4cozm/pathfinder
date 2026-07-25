@@ -43,6 +43,46 @@ class HostLoad {
     }
 
     /**
+     * 박스 전체 메모리. 컨테이너 cgroup 이 아니라 호스트 값이다
+     * (/proc/meminfo 는 네임스페이스되지 않는다).
+     *
+     * "여유"는 MemFree 가 아니라 **MemAvailable** 이다. MemFree 만 보면 page cache 를
+     * 쓴 만큼 항상 바닥으로 보이는데, 그 캐시는 필요할 때 회수된다. 커널이 계산해 주는
+     * MemAvailable 이 "지금 새 프로세스가 쓸 수 있는 양"에 가장 가깝다.
+     *
+     * @return array|null ['totalMb'=>int,'availableMb'=>int,'usedMb'=>int,'percent'=>float]
+     */
+    public static function memory() : ?array {
+        if(!is_string($raw = @file_get_contents('/proc/meminfo'))){
+            return null;
+        }
+
+        $read = function(string $key) use ($raw) : ?int {
+            return preg_match('/^' . $key . ':\s+(\d+) kB/m', $raw, $m) ? (int)$m[1] : null;
+        };
+
+        $totalKb = $read('MemTotal');
+        if(is_null($totalKb) || $totalKb <= 0){
+            return null;
+        }
+
+        $availableKb = $read('MemAvailable');
+        if(is_null($availableKb)){
+            // 구형 커널 폴백 — MemAvailable 이 없던 시절의 근사치
+            $availableKb = (int)$read('MemFree') + (int)$read('Buffers') + (int)$read('Cached');
+        }
+
+        $usedKb = max(0, $totalKb - $availableKb);
+
+        return [
+            'totalMb'     => (int)round($totalKb / 1024),
+            'availableMb' => (int)round($availableKb / 1024),
+            'usedMb'      => (int)round($usedKb / 1024),
+            'percent'     => round($usedKb * 100 / $totalKb, 1),
+        ];
+    }
+
+    /**
      * CPU 압력(PSI) some avg10/avg60/avg300 — "실행 대기로 지연된 시간의 비율(%)".
      *
      * loadavg 보다 해석이 쉽다. loadavg 는 코어 수와 I/O 대기에 오염되지만
