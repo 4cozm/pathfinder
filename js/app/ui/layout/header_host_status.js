@@ -184,8 +184,10 @@ define([
         if(m.host && m.host.percent !== null && m.host.percent !== undefined){
             parts.push({pct: Math.round(m.host.percent), label: '메모리'});
         }
-        if(c.perCore !== null && c.perCore !== undefined){
-            // perCore 1.0 = 코어가 꽉 찬 상태
+        // 실측 사용률(usage)이 있으면 그것을, 없으면 loadavg 근사를 쓴다
+        if(c.usage && c.usage.totalPct !== null && c.usage.totalPct !== undefined){
+            parts.push({pct: Math.round(c.usage.totalPct), label: 'CPU'});
+        }else if(c.perCore !== null && c.perCore !== undefined){
             parts.push({pct: Math.round(c.perCore * 100), label: 'CPU'});
         }
 
@@ -212,12 +214,16 @@ define([
             `스로틀: ${d.score > 0 ? '작동 중 (점수 ' + d.score + '/100)' : '없음 (점수 0)'}`,
             `측정: ${d.measuredAt ? d.measuredAt.kst : '-'} / ${d.measuredAt ? d.measuredAt.utc : '-'}`,
             `워커: 구동중 ${val(w.active)} / ${val(w.limit)} (예비 ${val(w.idle)}, 대기열 ${val(w.queue)})`,
-            `메모리(박스 전체): ${val((m.host||{}).usedMb, 'MB')} / ${val((m.host||{}).totalMb, 'MB')} 사용, 여유 ${val((m.host||{}).availableMb, 'MB')}`,
-            `메모리(패파 컨테이너): ${val((m.container||{}).workingSetMb, 'MB')} / ${val((m.container||{}).limitMb, 'MB')}`,
-            `CPU(박스 전체): load ${val(c.load1)} / ${val(c.cores)}코어 = 코어당 ${val(c.perCore)}` +
+            `메모리: 패파 ${val((m.container||{}).workingSetMb, 'MB')} + 기타 ${val(m.otherMb, 'MB')} = ${val((m.host||{}).usedMb, 'MB')} / ${val((m.host||{}).totalMb, 'MB')}, 여유 ${val((m.host||{}).availableMb, 'MB')}`,
+            `CPU(박스 전체): ${c.usage ? '사용 ' + val(c.usage.totalPct, '%') + ' (코어별 ' + c.usage.cores.join('% / ') + '%)' : 'load ' + val(c.load1) + ' / ' + val(c.cores) + '코어'}` +
                 (c.pressure ? `, 대기율 ${c.pressure.avg60}%` : ''),
             `내 트래킹: ${(TRACKING[t.state] || TRACKING.none)[1]}` +
-                (t.ageSeconds !== null && t.ageSeconds !== undefined ? ` (${humanAge(t.ageSeconds)})` : '')
+                (t.ageSeconds !== null && t.ageSeconds !== undefined ? ` — 위치 갱신 ${humanAge(t.ageSeconds)}` : '') +
+                ((d.peers && d.peers.count > 1 && d.peers.avgAgeSeconds !== null && t.state !== 'ok')
+                    ? (t.ageSeconds > Math.max(60, d.peers.avgAgeSeconds * 3)
+                        ? ' (다른 접속자는 정상 — 내 연결 문제로 추정)'
+                        : ' (다른 접속자도 늦음 — 서버 문제로 추정)')
+                    : '')
         ].join('\n');
     };
 
@@ -237,6 +243,17 @@ define([
         let t = d.tracking || {};
         let [trackColor, trackText] = TRACKING[t.state] || TRACKING.none;
         let load = loadSummary(d);
+        // 코어별 사용률 막대. usage 는 두 스냅샷의 차이라 첫 호출 직후엔 없을 수 있다
+        // (그때는 loadavg 로 폴백해 값 자체는 항상 보인다)
+        let cu = (c.usage && Array.isArray(c.usage.cores) && c.usage.cores.length) ? c.usage : null;
+        let coreBars = cu
+            ? cu.cores.map(pct =>
+                // 폭은 코어 수에 따라 나눈다 (CSS 에 50% 로 박으면 2코어 전제가 된다)
+                `<span class="pf-head-host-bar pf-head-host-bar--core" style="width:calc(${(100 / cu.cores.length).toFixed(1)}% - 3px)">` +
+                    `<i class="pf-head-host-bar--active" style="width:${Math.min(100, Math.round(pct))}%"></i>` +
+                `</span>`
+              ).join('')
+            : '';
 
         // 워커 사용률 막대 — 한도 대비 얼마나 찼는지가 한눈에 보여야 한다
         // 막대는 구동중(active) / 예비(idle) 두 칸. total 은 예열된 풀 크기라
@@ -246,17 +263,39 @@ define([
         let workerFree    = (w.limit && (w.total !== null && w.total !== undefined)) ? Math.max(0, w.limit - w.total) : null;
         let mh = (m.host || {});
         let mc = (m.container || {});
-        // 막대는 박스 전체 기준 (컨테이너는 보조 표기)
-        let memPct = (mh.percent === null || mh.percent === undefined) ? 0 : Math.min(100, mh.percent);
+        // 막대는 박스 전체 기준. 패파 몫과 나머지(DB·Redis·소켓·OS)를 나눠 칠한다
+        let memPfPct    = (mh.totalMb && mc.workingSetMb) ? Math.round(mc.workingSetMb * 100 / mh.totalMb) : 0;
+        let memOtherPct = (mh.totalMb && (m.otherMb !== null && m.otherMb !== undefined)) ? Math.round(m.otherMb * 100 / mh.totalMb) : 0;
 
+        // 트래킹 행은 "내 위치가 지도에 잘 반영되고 있나"라는 질문 하나에 답한다.
+        // 평상시: "위치 갱신 3초 전 (J115405)" — 짧게, 뭐가 갱신됐는지 명시.
+        // 문제일 때만 남들과 비교해 원인을 문장으로 진단한다:
+        //   남들은 정상  → 내 쪽(ESI 토큰/클라이언트) 문제
+        //   남들도 늦음  → 서버 쪽 문제
+        // 정상일 때 "접속자 N명 평균 X초 전" 같은 원자료를 나열하면 아무도 못 읽는다.
+        let p = d.peers || null;
+        let trackingHtml = '';
+        if(t.ageSeconds === null || t.ageSeconds === undefined){
+            trackingHtml = `<span class="txt-color ${trackColor}">${trackText}</span>`;
+        }else if(t.state === 'ok'){
+            trackingHtml =
+                `<span class="txt-color ${trackColor}">${trackText}</span>` +
+                ` <span class="pf-head-host-dim">위치 갱신 ${humanAge(t.ageSeconds)}${t.systemName ? ' (' + t.systemName + ')' : ''}</span>`;
+        }else{
+            let diagnosis = '';
+            if(p && p.count > 1 && p.avgAgeSeconds !== null){
+                diagnosis = (t.ageSeconds > Math.max(60, p.avgAgeSeconds * 3))
+                    ? `<br><span class="txt-color txt-color-orange">다른 접속자들은 정상이에요 — 내 연결 쪽 문제일 가능성이 높아요</span>`
+                    : `<br><span class="txt-color txt-color-orange">다른 접속자들도 같이 늦어지고 있어요 — 서버 쪽 문제예요</span>`;
+            }
+            trackingHtml =
+                `<span class="txt-color ${trackColor}">${trackText}</span>` +
+                ` <span class="pf-head-host-dim">마지막 위치 갱신 ${humanAge(t.ageSeconds)}</span>` +
+                diagnosis;
+        }
         let trackingRow = t.available === false
             ? ''
-            : row('fa-satellite-dish', '내 트래킹',
-                `<span class="txt-color ${trackColor}">${trackText}</span>` +
-                (t.ageSeconds === null || t.ageSeconds === undefined
-                    ? ''
-                    : ` <span class="pf-head-host-dim">${humanAge(t.ageSeconds)}${t.systemName ? ' · ' + t.systemName : ''}</span>`)
-            );
+            : row('fa-satellite-dish', '내 트래킹', trackingHtml);
 
         return `
             <div class="pf-head-host-head">
@@ -279,12 +318,17 @@ define([
                     `<span class="pf-head-host-dim">예비 ${val(w.idle)} · 여유 ${val(workerFree)}${w.queue ? ' · 대기열 ' + w.queue : ''}</span>`)}
                 ${row('fa-memory', '메모리',
                     `${val(mh.usedMb, 'MB')} <span class="pf-head-host-dim">/ ${val(mh.totalMb, 'MB')} 사용</span>` +
-                    `<span class="pf-head-host-bar"><i style="width:${memPct}%"></i></span>` +
-                    `<span class="pf-head-host-dim">여유 ${val(mh.availableMb, 'MB')}` +
-                        `${mc.available ? ` · 패파 ${val(mc.workingSetMb, 'MB')}/${val(mc.limitMb, 'MB')}` : ''}</span>`)}
+                    // 패파(진한) / 기타 서비스(연한) / 빈칸 = 여유 — 워커 막대와 같은 문법
+                    `<span class="pf-head-host-bar">` +
+                        `<i class="pf-head-host-bar--active" style="width:${memPfPct}%"></i>` +
+                        `<i class="pf-head-host-bar--idle" style="width:${memOtherPct}%"></i>` +
+                    `</span>` +
+                    `<span class="pf-head-host-dim">패파 ${val(mc.workingSetMb, 'MB')} · 기타 ${val(m.otherMb, 'MB')} · 여유 ${val(mh.availableMb, 'MB')}</span>`)}
                 ${row('fa-tachometer-alt', 'CPU',
-                    `${val(c.load1)} <span class="pf-head-host-dim">/ ${val(c.cores)}코어</span>` +
-                    `<span class="pf-head-host-dim">코어당 ${val(c.perCore)}${c.pressure ? ' · 대기율 ' + c.pressure.avg60 + '%' : ''}</span>`)}
+                    `${cu ? val(cu.totalPct, '%') : val(c.load1)} <span class="pf-head-host-dim">${cu ? '사용' : '/ ' + val(c.cores) + '코어'}</span>` +
+                    // 코어마다 막대 하나씩 — "코어별로 얼마나 도는지"가 한눈에
+                    `${coreBars}` +
+                    `<span class="pf-head-host-dim">load ${val(c.load1)}${c.pressure ? ' · 대기율 ' + c.pressure.avg60 + '%' : ''}</span>`)}
                 ${trackingRow}
             </ul>
             <div class="pf-head-host-foot">

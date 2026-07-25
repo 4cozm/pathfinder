@@ -83,6 +83,45 @@ class HostLoad {
     }
 
     /**
+     * 코어별 누적 CPU 시간(jiffies). 이 값 자체로는 아무 의미가 없고,
+     * **두 시점의 차이**를 내야 사용률이 된다 (호출부가 이전 스냅샷을 보관해야 한다).
+     *
+     * idle 에는 iowait 를 포함시킨다 — I/O 대기는 CPU 가 논 것이지 일한 것이 아니다.
+     *
+     * @return array|null ['cpu0'=>['total'=>int,'idle'=>int], ...] (전체 'cpu' 행은 제외)
+     */
+    public static function cpuStat() : ?array {
+        if(!is_string($raw = @file_get_contents('/proc/stat'))){
+            return null;
+        }
+
+        $cores = [];
+        foreach(explode("\n", $raw) as $line){
+            // 'cpu0 ...' 처럼 숫자가 붙은 행만 (합계 행 'cpu ' 는 제외)
+            if(!preg_match('/^(cpu\d+)\s+(.+)$/', $line, $m)){
+                continue;
+            }
+            $fields = preg_split('/\s+/', trim($m[2]));
+            if(count($fields) < 5){
+                continue;
+            }
+
+            $total = 0;
+            foreach($fields as $f){
+                $total += (int)$f;
+            }
+
+            $cores[$m[1]] = [
+                'total' => $total,
+                // idle(4번째) + iowait(5번째)
+                'idle'  => (int)$fields[3] + (int)$fields[4],
+            ];
+        }
+
+        return $cores ? : null;
+    }
+
+    /**
      * CPU 압력(PSI) some avg10/avg60/avg300 — "실행 대기로 지연된 시간의 비율(%)".
      *
      * loadavg 보다 해석이 쉽다. loadavg 는 코어 수와 I/O 대기에 오염되지만

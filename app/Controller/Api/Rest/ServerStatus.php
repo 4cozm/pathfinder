@@ -35,6 +35,23 @@ class ServerStatus extends AbstractRestController {
     const CACHE_KEY = 'PF_SERVER_STATUS';
 
     /**
+     * 직전 /proc/stat 스냅샷. CPU 사용률은 누적 카운터의 **차이**로만 구할 수 있어서
+     * 이전 시점을 어딘가 들고 있어야 한다. 캐시 주기(30s)가 그대로 측정 창이 된다.
+     */
+    const CPU_PREV_KEY = 'PF_CPU_STAT_PREV';
+    const CPU_PREV_TTL = 3600;
+
+    /**
+     * 측정 창이 이보다 길면 "지금 사용률"이라고 부를 수 없다(아무도 안 들어온 시간대).
+     */
+    const CPU_MAX_WINDOW_SECONDS = 600;
+
+    /**
+     * 다른 사람 트래킹과 비교할 때 "활성"으로 칠 범위
+     */
+    const PEER_WINDOW_MINUTES = 10;
+
+    /**
      * 신호등 임계값 — backpressure score 기준.
      * 새 임계값을 발명하지 않고 이미 실전 검증된 복합 점수를 재사용한다.
      * (실패율 40 + 메모리 30 + 동시성 20 + 지연 10 가중합, 히스테리시스 포함)
@@ -148,7 +165,8 @@ class ServerStatus extends AbstractRestController {
         $score  = $this->readScore($redis);
         $worker = $this->workerStatus();
         $memory = $this->memoryStatus();
-        $cpu    = $this->cpuStatus();
+        $cpu    = $this->cpuStatus($redis);
+        $peers  = $this->peerTracking();
 
         return [
             'measuredAt' => [
@@ -163,6 +181,9 @@ class ServerStatus extends AbstractRestController {
             'worker'     => $worker,
             'memory'     => $memory,
             'cpu'        => $cpu,
+            // 남들 트래킹 신선도. 서버 공통 값이라 캐시에 담아도 된다
+            // (내 값은 캐시 밖에서 매 요청 계산해 tracking 으로 따로 붙인다)
+            'peers'      => $peers,
         ];
     }
 
@@ -250,8 +271,18 @@ class ServerStatus extends AbstractRestController {
         // 아니라 호스트 쪽이고, 컨테이너 값만 보면 박스가 꽉 차가는 것을 놓친다.
         $host = HostLoad::memory();
 
+        // 박스 사용량에서 패파 몫을 뺀 나머지 = DB·Redis·소켓·traefik·OS 합계.
+        // 컨테이너별로 쪼개려면 docker.sock 이 필요한데, 인터넷에 노출된 이 컨테이너에
+        // 그것을 주는 것은 사실상 호스트 root 권한을 주는 것이라 하지 않는다.
+        // 개별 내역 없이도 "패파가 먹는 몫 / 나머지 / 여유"는 이 값들로 나눌 수 있다.
+        $otherMb = null;
+        if($host && !is_null($workingSet)){
+            $otherMb = max(0, $host['usedMb'] - (int)round($workingSet / 1048576));
+        }
+
         return [
             'host'      => $host,
+            'otherMb'   => $otherMb,
             'container' => is_null($workingSet)
                 ? ['available' => false]
                 : [
@@ -271,7 +302,7 @@ class ServerStatus extends AbstractRestController {
      * loadAverage 는 코어 수 없이는 해석할 수 없으므로 cores/perCore 를 같이 낸다.
      * @return array
      */
-    protected function cpuStatus() : array {
+    protected function cpuStatus(?\Redis $redis) : array {
         $load     = HostLoad::loadAverage();
         $cores    = HostLoad::cores();
         $pressure = HostLoad::cpuPressure();
@@ -286,6 +317,108 @@ class ServerStatus extends AbstractRestController {
             'perCore'  => ($load && $cores) ? round($load[0] / $cores, 2) : null,
             // "실행 대기로 지연된 시간의 비율(%)" — loadavg 보다 체감에 가깝다
             'pressure' => $pressure,
+            // 코어별 실사용률 (loadavg 와 달리 "지금 얼마나 돌고 있나"를 직접 준다)
+            'usage'    => $this->cpuUsage($redis),
+        ];
+    }
+
+    /**
+     * 코어별 CPU 사용률. /proc/stat 은 부팅 이후 누적값이라 두 시점의 차이로만 구할 수 있다.
+     * 직전 스냅샷을 Redis 에 두고 캐시 주기(30s)를 그대로 측정 창으로 쓴다.
+     *
+     * @param \Redis|null $redis
+     * @return array|null ['cores'=>[float,...],'totalPct'=>float,'windowSeconds'=>int]
+     */
+    protected function cpuUsage(?\Redis $redis) : ?array {
+        if(!$redis || is_null($current = HostLoad::cpuStat())){
+            return null;
+        }
+
+        $stamp = time();
+        $prev = null;
+
+        try{
+            $raw = $redis->get(self::CPU_PREV_KEY);
+            if(is_string($raw) && $raw !== ''){
+                $decoded = json_decode($raw, true);
+                $prev = is_array($decoded) ? $decoded : null;
+            }
+            // 다음 호출을 위한 기준점. 이번에 값을 못 내더라도 반드시 남긴다
+            $redis->setex(self::CPU_PREV_KEY, self::CPU_PREV_TTL, json_encode([
+                'stamp' => $stamp,
+                'cores' => $current,
+            ]));
+        }catch(\Throwable $e){
+            return null;
+        }
+
+        if(!is_array($prev) || empty($prev['cores'])){
+            return null;
+        }
+
+        $window = $stamp - (int)($prev['stamp'] ?? 0);
+        if($window <= 0 || $window > self::CPU_MAX_WINDOW_SECONDS){
+            // 아무도 안 들어온 시간대의 평균은 "지금 사용률"이 아니다
+            return null;
+        }
+
+        $cores = [];
+        $sumTotal = 0;
+        $sumIdle = 0;
+
+        foreach($current as $key => $cur){
+            if(!isset($prev['cores'][$key])){
+                continue;
+            }
+            $deltaTotal = $cur['total'] - (int)$prev['cores'][$key]['total'];
+            $deltaIdle  = $cur['idle'] - (int)$prev['cores'][$key]['idle'];
+
+            if($deltaTotal <= 0){
+                continue;
+            }
+
+            $cores[] = round((1 - ($deltaIdle / $deltaTotal)) * 100, 1);
+            $sumTotal += $deltaTotal;
+            $sumIdle += $deltaIdle;
+        }
+
+        if(!$cores){
+            return null;
+        }
+
+        return [
+            'cores'         => $cores,
+            'totalPct'      => ($sumTotal > 0) ? round((1 - ($sumIdle / $sumTotal)) * 100, 1) : null,
+            'windowSeconds' => $window,
+        ];
+    }
+
+    /**
+     * 다른 접속자들의 위치 갱신 신선도.
+     * "서버가 느린 건지 나만 느린 건지"는 내 값만 봐서는 구분할 수 없다.
+     *
+     * @return array|null
+     */
+    protected function peerTracking() : ?array {
+        try{
+            $rows = $this->getDB()->exec(
+                'SELECT COUNT(*) AS `cnt`, ' .
+                'ROUND(AVG(TIMESTAMPDIFF(SECOND, `updated`, UTC_TIMESTAMP()))) AS `avgAge` ' .
+                'FROM `character_log` ' .
+                'WHERE `updated` > DATE_SUB(UTC_TIMESTAMP(), INTERVAL :minutes MINUTE)',
+                [':minutes' => self::PEER_WINDOW_MINUTES]
+            );
+        }catch(\Throwable $e){
+            return null;
+        }
+
+        if(empty($rows[0]) || !(int)$rows[0]['cnt']){
+            return null;
+        }
+
+        return [
+            'count'         => (int)$rows[0]['cnt'],
+            'avgAgeSeconds' => is_null($rows[0]['avgAge']) ? null : (int)$rows[0]['avgAge'],
         ];
     }
 
