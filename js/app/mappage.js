@@ -306,7 +306,16 @@ define([
                         switch(MsgWorkerMessage.task()){
                             case 'mapUpdate':
                                 Util.updateCurrentMapData(MsgWorkerMessage.data());
-                                ModuleMap.updateMapModule(mapModule);
+                                // 시스템을 그린 "다음" 유저 레이어를 다시 칠한다.
+                                // 파일럿 좌표('mapSubscriptions')는 시스템('mapUpdate')보다
+                                // 먼저 도착해 캐시에 이미 있지만, 그 시점엔 시스템 DOM 이 없어
+                                // 조용히 버려진다(map.js 는 기존 .system 노드만 순회). 여기서
+                                // 리페인트하지 않으면 파일럿은 다음 폴링/브로드캐스트까지
+                                // 보이지 않는다 — "새 웜홀은 뜨는데 사람이 1~2초 늦게 뜨는" 증상.
+                                // 캐시는 깊은 복사를 돌려주므로(util.js getCurrentMapUserData)
+                                // 반복 리페인트는 멱등이고 네트워크 요청도 없다.
+                                ModuleMap.updateMapModule(mapModule)
+                                    .then(() => ModuleMap.updateActiveMapUserData(mapModule));
                                 break;
                             case 'mapAccess':
                             case 'mapDeleted':
@@ -597,9 +606,14 @@ define([
                     }
 
                     // update map data (e.g. new systems added)
+                    // 새 시스템이 이 응답에 실려 왔다면, 유저 레이어 리페인트는 반드시
+                    // updateMapModule(시스템 DOM 생성)이 끝난 뒤에 돌아야 한다.
+                    // 기다리지 않으면 소켓 경로와 같은 순서 역전이 자기 폴링 경로에도 생긴다
+                    // (파일럿을 그리려는 시점에 시스템 노드가 아직 없어 조용히 버려짐).
+                    let mapDataUpdated = Promise.resolve();
                     if(data.mapData !== undefined){
                         Util.setCurrentMapData(data.mapData);
-                        ModuleMap.updateMapModule(mapModule);
+                        mapDataUpdated = ModuleMap.updateMapModule(mapModule);
                     }
 
                     // store current map user data (cache)
@@ -608,7 +622,9 @@ define([
                     }
 
                     // update map module character data
-                    ModuleMap.updateActiveMapUserData(mapModule).then(() => {
+                    mapDataUpdated.then(() =>
+                        ModuleMap.updateActiveMapUserData(mapModule)
+                    ).then(() => {
                         // map module update done, init new trigger
                         initMapUserUpdatePing(mapModule);
                     });
