@@ -47,7 +47,7 @@ define([
     // 색은 기존 txt-color 팔레트를 그대로 쓴다 (sass/_main-colorpallet.scss)
     let LEVEL = {
         ok:       ['txt-color-greenLight', '정상'],
-        warn:     ['txt-color-orange',     '부하'],
+        warn:     ['txt-color-orange',     '혼잡'],    // '부하'는 부하율 표기와 겹쳐 '부하 · 부하 35%' 가 된다
         degraded: ['txt-color-red',        '저하'],
         unknown:  ['txt-color-grayLight',  '알 수 없음']
     };
@@ -215,11 +215,16 @@ define([
             `측정: ${d.measuredAt ? d.measuredAt.kst : '-'} / ${d.measuredAt ? d.measuredAt.utc : '-'}`,
             `워커: 구동중 ${val(w.active)} / ${val(w.limit)} (예비 ${val(w.idle)}, 대기열 ${val(w.queue)})`,
             `메모리: 패파 ${val((m.container||{}).workingSetMb, 'MB')} + 기타 ${val(m.otherMb, 'MB')} = ${val((m.host||{}).usedMb, 'MB')} / ${val((m.host||{}).totalMb, 'MB')}, 여유 ${val((m.host||{}).availableMb, 'MB')}`,
-            `CPU(박스 전체): ${c.usage ? '사용 ' + val(c.usage.totalPct, '%') + ' (코어별 ' + c.usage.cores.join('% / ') + '%)' : 'load ' + val(c.load1) + ' / ' + val(c.cores) + '코어'}` +
-                (c.pressure ? `, 대기율 ${c.pressure.avg60}%` : ''),
+            `CPU(박스 전체): ${c.usage ? '사용 ' + val(c.usage.totalPct, '%') + ' (코어별 ' + c.usage.cores.join('% / ') + '%)' : '사용 ' + val(Math.round((c.perCore || 0) * 100), '%') + ' (근사치)'}` +
+                ((c.pressure && c.pressure.avg60 >= 10) ? ` — CPU 차례 대기 ${c.pressure.avg60}%` : ''),
             `내 트래킹: ${(TRACKING[t.state] || TRACKING.none)[1]}` +
                 (t.ageSeconds !== null && t.ageSeconds !== undefined ? ` — 위치 갱신 ${humanAge(t.ageSeconds)}` : '') +
-                ((d.peers && d.peers.count > 1 && d.peers.avgAgeSeconds !== null && t.state !== 'ok')
+                // 진단은 lag/stale 에만 붙인다. 'none'(게임 미접속)은 지연이 아니고,
+                // ageSeconds 가 null 이면 null > 60 이 false 로 떨어져 "서버 문제" 분기로
+                // 잘못 흘러간다 (실전 보고에서 "위치 없음 (서버 문제로 추정)" 이 나왔다)
+                ((d.peers && d.peers.count > 1 && d.peers.avgAgeSeconds !== null &&
+                  (t.state === 'lag' || t.state === 'stale') &&
+                  t.ageSeconds !== null && t.ageSeconds !== undefined)
                     ? (t.ageSeconds > Math.max(60, d.peers.avgAgeSeconds * 3)
                         ? ' (다른 접속자는 정상 — 내 연결 문제로 추정)'
                         : ' (다른 접속자도 늦음 — 서버 문제로 추정)')
@@ -284,7 +289,7 @@ define([
                 ` <span class="pf-head-host-dim">위치 갱신 ${humanAge(t.ageSeconds)}${t.systemName ? ' (' + t.systemName + ')' : ''}</span>`;
         }else{
             let diagnosis = '';
-            if(p && p.count > 1 && p.avgAgeSeconds !== null){
+            if(p && p.count > 1 && p.avgAgeSeconds !== null && (t.state === 'lag' || t.state === 'stale')){
                 diagnosis = (t.ageSeconds > Math.max(60, p.avgAgeSeconds * 3))
                     ? `<br><span class="txt-color txt-color-orange">다른 접속자들은 정상이에요 — 내 연결 쪽 문제일 가능성이 높아요</span>`
                     : `<br><span class="txt-color txt-color-orange">다른 접속자들도 같이 늦어지고 있어요 — 서버 쪽 문제예요</span>`;
@@ -326,10 +331,15 @@ define([
                     `</span>` +
                     `<span class="pf-head-host-dim">패파 ${val(mc.workingSetMb, 'MB')} · 기타 ${val(m.otherMb, 'MB')} · 여유 ${val(mh.availableMb, 'MB')}</span>`)}
                 ${row('fa-tachometer-alt', 'CPU',
-                    `${cu ? val(cu.totalPct, '%') : val(c.load1)} <span class="pf-head-host-dim">${cu ? '사용' : '/ ' + val(c.cores) + '코어'}</span>` +
+                    `${cu ? val(cu.totalPct, '%') : val(Math.round((c.perCore || 0) * 100), '%')} <span class="pf-head-host-dim">사용</span>` +
                     // 코어마다 막대 하나씩 — "코어별로 얼마나 도는지"가 한눈에
                     `${coreBars}` +
-                    `<span class="pf-head-host-dim">load ${val(c.load1)}${c.pressure ? ' · 대기율 ' + c.pressure.avg60 + '%' : ''}</span>`)}
+                    // load·PSI 원자료("load 0.47 · 대기율 3.49%")는 걷어냈다 — 아는 사람만
+                    // 읽는 숫자다. CPU 차례를 기다리는 작업이 실제로 생겼을 때만(PSI 10%+)
+                    // 문장으로 알린다. 평상시엔 사용률과 코어 막대면 충분하다.
+                    `${(c.pressure && c.pressure.avg60 >= 10)
+                        ? `<span class="txt-color txt-color-orange" style="font-size:10px">일부 작업이 CPU 차례를 기다리고 있어요 (최근 1분 ${c.pressure.avg60}%)</span>`
+                        : ''}`)}
                 ${trackingRow}
             </ul>
             <div class="pf-head-host-foot">
