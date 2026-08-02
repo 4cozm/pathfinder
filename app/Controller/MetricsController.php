@@ -292,7 +292,7 @@ class MetricsController {
         if(is_null($redis) && extension_loaded('redis')){
             $redis = new \Redis();
             try {
-                if(!$redis->pconnect(
+                if(!@$redis->pconnect(
                     Config::getEnvironmentData('REDIS_HOST'),
                     Config::getEnvironmentData('REDIS_PORT') ? : 6379,
                     Config::REDIS_OPT_TIMEOUT

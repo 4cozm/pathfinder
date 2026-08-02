@@ -99,7 +99,7 @@ class BackpressureManager extends \Prefab {
         if(is_null($this->redis) && extension_loaded('redis')){
             $this->redis = new \Redis();
             try {
-                if(!$this->redis->pconnect(
+                if(!@$this->redis->pconnect(
                     Config::getEnvironmentData('REDIS_HOST'),
                     Config::getEnvironmentData('REDIS_PORT') ? : 6379,
                     Config::REDIS_OPT_TIMEOUT

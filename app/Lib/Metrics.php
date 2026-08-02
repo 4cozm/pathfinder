@@ -82,24 +82,57 @@ class Metrics {
     private static $shutdownRegistered = false;
 
     /**
+     * PHP 경고(E_WARNING)를 삼킨 채 콜백을 실행한다.
+     *
+     * 이게 왜 필요한가: phpredis 는 접속 실패 시 RedisException 을 던지기 "전에"
+     * E_WARNING 을 먼저 올린다(예: "php_network_getaddresses: getaddrinfo failed").
+     * 그런데 F3 는 부팅 시 전역 set_error_handler 를 걸어두고, 거기서
+     * `if($level & error_reporting()) $this->error(500, ...)` 로 모든 경고를
+     * 그대로 500 으로 승격시킨 뒤 die 한다.
+     *
+     * 즉 경고는 예외가 아니므로 아무리 try/catch 로 감싸도 잡히지 않고,
+     * catch 에 도달하기도 전에 F3 가 프로세스를 500 으로 끝내버린다.
+     * 실제로 이 경로 때문에 `php index.php /cron` 이 매 분 shutdown 단계에서
+     * 500 을 뱉었고, 웹 요청도 응답 뒤에 500 페이지가 덧붙었다.
+     *
+     * 계측은 어떤 경우에도 기능을 깨뜨리면 안 되므로, Redis 를 만지는 동안에는
+     * F3 핸들러가 아예 보지 못하도록 우리 핸들러로 갈아끼운다.
+     *
+     * @param callable $fn
+     * @return mixed
+     */
+    private static function silenced(callable $fn) {
+        // true 반환 = "처리했음", PHP 기본 핸들러도 F3 핸들러도 타지 않는다.
+        set_error_handler(function() { return true; });
+        try {
+            return $fn();
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
      * @return \Redis|null
      */
     protected static function getRedis() : ?\Redis {
         if(self::$redis === false){
             self::$redis = null;
             if(extension_loaded('redis')){
-                $redis = new \Redis();
                 try {
-                    if($redis->pconnect(
-                        Config::getEnvironmentData('REDIS_HOST'),
-                        (int)(Config::getEnvironmentData('REDIS_PORT') ? : 6379),
-                        Config::REDIS_OPT_TIMEOUT
-                    )){
-                        if($auth = Config::getEnvironmentData('REDIS_AUTH')){
-                            $redis->auth($auth);
+                    self::$redis = self::silenced(function(){
+                        $redis = new \Redis();
+                        if($redis->pconnect(
+                            (string)Config::getEnvironmentData('REDIS_HOST'),
+                            (int)(Config::getEnvironmentData('REDIS_PORT') ? : 6379),
+                            Config::REDIS_OPT_TIMEOUT
+                        )){
+                            if($auth = Config::getEnvironmentData('REDIS_AUTH')){
+                                $redis->auth($auth);
+                            }
+                            return $redis;
                         }
-                        self::$redis = $redis;
-                    }
+                        return null;
+                    });
                 } catch (\Throwable $e) {
                     self::$redis = null;
                 }
@@ -188,21 +221,24 @@ class Metrics {
         self::$buffer = [];
         try {
             if($redis = self::getRedis()){
-                $pipe = $redis->multi(\Redis::PIPELINE);
-                foreach($buffer as $field => $entry){
-                    switch($entry['op']){
-                        case 'incr':
-                            $pipe->hIncrBy(self::REDIS_KEY, $field, (int)$entry['val']);
-                            break;
-                        case 'incrfloat':
-                            $pipe->hIncrByFloat(self::REDIS_KEY, $field, (float)$entry['val']);
-                            break;
-                        case 'set':
-                            $pipe->hSet(self::REDIS_KEY, $field, $entry['val']);
-                            break;
+                // 끊어진 소켓에서는 파이프라인 명령도 경고를 올린다 -> silenced() 필수
+                self::silenced(function() use ($redis, $buffer){
+                    $pipe = $redis->multi(\Redis::PIPELINE);
+                    foreach($buffer as $field => $entry){
+                        switch($entry['op']){
+                            case 'incr':
+                                $pipe->hIncrBy(self::REDIS_KEY, $field, (int)$entry['val']);
+                                break;
+                            case 'incrfloat':
+                                $pipe->hIncrByFloat(self::REDIS_KEY, $field, (float)$entry['val']);
+                                break;
+                            case 'set':
+                                $pipe->hSet(self::REDIS_KEY, $field, $entry['val']);
+                                break;
+                        }
                     }
-                }
-                $pipe->exec();
+                    $pipe->exec();
+                });
             }
         } catch (\Throwable $e) {
             // metrics must never break the request
@@ -221,7 +257,9 @@ class Metrics {
             if(!$redis = self::getRedis()){
                 return "# Redis unavailable, no app metrics\n";
             }
-            $fields = $redis->hGetAll(self::REDIS_KEY);
+            $fields = self::silenced(function() use ($redis){
+                return $redis->hGetAll(self::REDIS_KEY);
+            });
             if(!is_array($fields)){
                 return '';
             }

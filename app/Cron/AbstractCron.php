@@ -212,11 +212,16 @@ abstract class AbstractCron {
             ];
 
             // Prometheus 노출 (이미 계산된 값 재사용 — cron_history/Discord 알림과 별개)
-            Metrics::counter('pf_cron_runs_total', ['job' => $job]);
-            Metrics::gauge('pf_cron_last_duration_seconds', ['job' => $job], $duration);
-            Metrics::gauge('pf_cron_last_cpu_seconds', ['job' => $job], $cpuTime);
-            Metrics::gauge('pf_cron_last_mem_peak_bytes', ['job' => $job], $memPeak);
-            Metrics::gauge('pf_cron_fail_count', ['job' => $job], $failCount);
+            // standalone-daemon.php 와 같은 방침: 계측이 cron 본연의 일을 절대 막지 못하게 한다.
+            try {
+                Metrics::counter('pf_cron_runs_total', ['job' => $job]);
+                Metrics::gauge('pf_cron_last_duration_seconds', ['job' => $job], $duration);
+                Metrics::gauge('pf_cron_last_cpu_seconds', ['job' => $job], $cpuTime);
+                Metrics::gauge('pf_cron_last_mem_peak_bytes', ['job' => $job], $memPeak);
+                Metrics::gauge('pf_cron_fail_count', ['job' => $job], $failCount);
+            } catch (\Throwable $e) {
+                // metrics must never break a cron job
+            }
 
 
             // Discord Webhook Logic
