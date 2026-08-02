@@ -2969,34 +2969,41 @@ define([
         //    note: EVERY path that can end a hover (bar leave, tip leave) always (re)schedules
         //    the same close timer rather than skipping it, so there's no state where the mouse
         //    is fully outside both elements yet nothing is left to close it.
-        let primeTimeShowTimer = null;
-        let primeTimeCloseTimer = null;
-        let clearPrimeTimeCloseTimer = () => {
-            if(primeTimeCloseTimer){
-                clearTimeout(primeTimeCloseTimer);
-                primeTimeCloseTimer = null;
+        //    Timers are stored PER-ELEMENT (jQuery .data(), keyed off the hovered bar itself),
+        //    not in a single shared variable -> hovering system A then quickly moving to system
+        //    B's bar must not let B's "over" cancel A's pending close (they're different bars,
+        //    a shared timer var would let that happen and leave A's popover orphaned open).
+        let clearPrimeTimeCloseTimer = el => {
+            let timer = el.data('primeTimeCloseTimer');
+            if(timer){
+                clearTimeout(timer);
+                el.removeData('primeTimeCloseTimer');
             }
         };
-        let schedulePrimeTimeClose = trigger => {
-            clearPrimeTimeCloseTimer();
-            primeTimeCloseTimer = setTimeout(() => {
-                trigger.destroyPopover();
-            }, 300);
+        let schedulePrimeTimeClose = el => {
+            clearPrimeTimeCloseTimer(el);
+            el.data('primeTimeCloseTimer', setTimeout(() => {
+                el.removeData('primeTimeCloseTimer');
+                el.destroyPopover();
+            }, 300));
         };
         mapContainer.hoverIntent({
             over: function(e){
                 let el = $(this);
-                clearPrimeTimeCloseTimer();
+                clearPrimeTimeCloseTimer(el);
 
                 let existingPopover = el.data('bs.popover');
-                if(existingPopover && existingPopover.tip().is(':visible')){
+                // check the "in" class (bootstrap adds/removes it synchronously on show/hide),
+                // NOT :visible -> hide()'s fade-out keeps the tip laid out (and thus :visible)
+                // for ~150ms after "in" is already gone, which would wrongly read as "still open"
+                if(existingPopover && existingPopover.tip().hasClass('in')){
                     // already open (mouse briefly left and came back to the bar) -> just
                     // cancelling the close above is enough, don't restart the show delay
                     return;
                 }
 
-                clearTimeout(primeTimeShowTimer);
-                primeTimeShowTimer = setTimeout(() => {
+                clearTimeout(el.data('primeTimeShowTimer'));
+                el.data('primeTimeShowTimer', setTimeout(() => {
                     let primeTime = null;
                     try{
                         primeTime = JSON.parse(el.attr('data-primetime'));
@@ -3016,14 +3023,16 @@ define([
                         smaller: true,
                         show: true,
                         hoverBridge: true,
-                        onTipEnter: () => clearPrimeTimeCloseTimer(),
+                        onTipEnter: () => clearPrimeTimeCloseTimer(el),
                         onTipLeave: () => schedulePrimeTimeClose(el)
                     });
-                }, 1000);
+                }, 1000));
             },
             out: function(e){
-                clearTimeout(primeTimeShowTimer);
-                schedulePrimeTimeClose($(this));
+                let el = $(this);
+                clearTimeout(el.data('primeTimeShowTimer'));
+                el.removeData('primeTimeShowTimer');
+                schedulePrimeTimeClose(el);
             },
             selector: '.' + config.systemHeadPrimeTimeClass
         });

@@ -1982,7 +1982,7 @@ define([
 
     /**
      * add a "prime time" (zKillboard derived) tooltip to an element
-     * @param tooltipData {source, owners[], n, activeDays, systemN, systemActiveDays, corpActivityTotal, medianHour, confident, checkedAt}
+     * @param tooltipData {source, owners[], n, activeDays, systemN, systemActiveDays, corpActivityTotal (kills+losses, all identified owner corps summed), medianHour, confident, checkedAt}
      * @param options {..., hoverBridge, onTipEnter, onTipLeave} hoverBridge wires mouseenter/mouseleave
      *        on the rendered tip element (not "element" itself, the tip lives under <body>) to the
      *        onTipEnter/onTipLeave callbacks -> lets a caller keep the popover open while it's hovered
@@ -2011,7 +2011,6 @@ define([
                     activeDays: tooltipData.activeDays || 0,
                     systemN: tooltipData.systemN || 0,
                     systemActiveDays: tooltipData.systemActiveDays || 0,
-                    corpActivityTotal: tooltipData.corpActivityTotal || 0,
                     lowConfidence: !tooltipData.confident,
                     // medianHour is computed server-side in UTC (killmail_time) -> convert to
                     // KST (UTC+9, no DST) for display, that's what the target audience reads in
@@ -2019,6 +2018,22 @@ define([
                         '<span class="txt-color txt-color-grayLight">불명확</span>' :
                         (((tooltipData.medianHour + 9) % 24) + '시&nbsp;한국시간')
                 };
+
+                if(isCorp){
+                    // zKillboard's per-corp activity matrix counts EVERY killmail the corp
+                    // appears on, win or lose -> "킬" would misrepresent a corp that mostly
+                    // dies as more dangerous than it is. When multiple owner corps were
+                    // identified, this is also their SUMMED matrices -> a shared fight (e.g.
+                    // allies on the same killmail) is counted once per corp, so it's a "how
+                    // much this group fights" figure, not a deduplicated unique-kill count.
+                    // Both caveats are surfaced in the label rather than silently implied.
+                    let activityLabel = (tooltipData.corpActivityTotal || 0) + '건';
+                    if(Array.isArray(tooltipData.owners) && tooltipData.owners.length > 1){
+                        activityLabel += '&nbsp;<span class="txt-color txt-color-grayLight">(' +
+                            tooltipData.owners.length + '개 조직 합산)</span>';
+                    }
+                    data.corpActivityLabel = activityLabel;
+                }
 
                 if(isCorp && Array.isArray(tooltipData.owners) && tooltipData.owners.length){
                     // owner name/ticker come from zKillboard (untrusted, ultimately CCP corp

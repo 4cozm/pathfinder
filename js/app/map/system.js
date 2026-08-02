@@ -945,6 +945,11 @@ define([
 
         if(newEl){
             if(existingEl.length){
+                // this runs on every poll (see comment above), so a popover can easily still
+                // be open on it (esp. now that hovering the popover itself keeps it open) ->
+                // replaceWith() strips the old element's jQuery data without tearing down its
+                // popover, orphaning the tip (it lives under <body>, not under this element)
+                existingEl.destroyPopover();
                 existingEl.replaceWith(newEl);
             }else{
                 let infoLeft = systemEl.find('.' + config.systemHeadInfoLeftClass);
@@ -953,6 +958,7 @@ define([
                 }
             }
         }else if(existingEl.length){
+            existingEl.destroyPopover();
             existingEl.remove();
         }
     };
