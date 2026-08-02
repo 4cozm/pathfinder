@@ -614,32 +614,23 @@ define([
     };
 
     /**
-     * format remaining seconds into an approximate Korean countdown label (minute granularity)
-     * -> "약 30분 남음" (manual human toggle -> low accuracy -> "약" prefix, seconds not critical)
+     * format remaining seconds into a compact "MM:SS 남음" countdown label
+     * -> kept short so the overlay label doesn't cover neighboring map elements
      * @param remainingSec
      * @returns {string}
      */
     let formatSuperEolRemaining = remainingSec => {
         if(remainingSec <= 0){
-            return '약 곧 붕괴';
+            return '00:00 남음';
         }
-        let days = Math.floor(remainingSec / (24 * 60 * 60));
-        let left = remainingSec - days * 24 * 60 * 60;
-        let hours = Math.floor(left / (60 * 60));
-        left = left - hours * 60 * 60;
-        let min = Math.floor(left / 60);
+        let hours = Math.floor(remainingSec / (60 * 60));
+        let min = Math.floor((remainingSec % (60 * 60)) / 60);
+        let sec = remainingSec % 60;
 
-        if(!days && !hours && !min){
-            // less than a minute left
-            return '약 1분 미만 남음';
-        }
-
-        let label = '약 ';
-        if(days){ label += days + '일 '; }
-        if(hours){ label += hours + '시간 '; }
-        if(min){ label += min + '분 '; }
-        label += '남음';
-        return label;
+        let time = hours ?
+            `${hours}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}` :
+            `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        return time + ' 남음';
     };
 
     /**
