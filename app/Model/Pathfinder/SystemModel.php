@@ -126,6 +126,16 @@ class SystemModel extends AbstractMapTrackingModel {
             'default' => 0,
             'activity-log' => true
         ],
+        'zkbCheckedAt' => [
+            // last *successful* zKillboard prime-time fetch (null = never fetched)
+            'type' => Schema::DT_TIMESTAMP,
+            'default' => null
+        ],
+        'zkbData' => [
+            // JSON: {n, activeDays, medianHour, histogram:[24], confident}
+            'type' => Schema::DT_TEXT,
+            'default' => null
+        ],
         'description' => [
             'type' => Schema::DT_TEXT,
             'activity-log' => true,
@@ -186,6 +196,11 @@ class SystemModel extends AbstractMapTrackingModel {
             $data->rallyUpdated             = strtotime($this->rallyUpdated);
             $data->rallyPoke                = $this->rallyPoke;
             $data->description              = $this->description ? : '';
+
+            if($this->zkbData && ($primeTime = json_decode($this->zkbData))){
+                $primeTime->checkedAt        = strtotime($this->zkbCheckedAt);
+                $data->primeTime             = $primeTime;
+            }
 
             $data->position                 = (object) [];
             $data->position->x              = $this->posX;

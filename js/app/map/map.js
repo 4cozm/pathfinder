@@ -35,6 +35,7 @@ define([
         systemHeadCounterClass: 'pf-system-head-counter',               // class for system user counter
         systemHeadExpandClass: 'pf-system-head-expand',                 // class for system head expand arrow
         systemHeadInfoClass: 'pf-system-head-info',                     // class for system info
+        systemHeadPrimeTimeClass: 'pf-system-head-primetime',           // class for "prime time" bar wrapper
         systemBodyClass: 'pf-system-body',                              // class for system body
         systemBodyItemHeight: 16,                                       // px of a system body entry
         systemBodyItemClass: 'pf-system-body-item',                     // class for a system body entry
@@ -553,6 +554,10 @@ define([
 
         // set system status
         system.setSystemStatus(data.status.name);
+
+        // "prime time" bar shows a window relative to "now" -> must be refreshed on every
+        // poll, not just on creation, otherwise it silently goes stale while open
+        System.updatePrimeTime(system, data);
         system.data('id', parseInt(data.id));
         system.data('systemId', parseInt(data.systemId));
         system.data('name', data.name);
@@ -2954,6 +2959,42 @@ define([
             '.' + config.systemHeadInfoClass + ' span[class^="pf-system-sec-"]',
             {placement: 'right', smaller: true}
         );
+
+        // system "prime time" popover --------------------------------------------------------------------------------
+        // -> deliberately slow (3s hold), unlike the other at-a-glance tooltips above:
+        //    this is supplementary detail, the bar itself already shows the gist
+        let primeTimeHoverTimer = null;
+        mapContainer.hoverIntent({
+            over: function(e){
+                let el = $(this);
+                primeTimeHoverTimer = setTimeout(() => {
+                    let primeTime = null;
+                    try{
+                        primeTime = JSON.parse(el.attr('data-primetime'));
+                    }catch(err){
+                        return;
+                    }
+                    if(!primeTime){
+                        return;
+                    }
+
+                    // addPrimeTimeTooltip() loads its template asynchronously (requirejs) ->
+                    // show/smaller must be passed as options, NOT chained after the call
+                    // (chaining runs synchronously, before the popover has any content)
+                    el.addPrimeTimeTooltip(primeTime, {
+                        trigger: 'manual',
+                        placement: 'top',
+                        smaller: true,
+                        show: true
+                    });
+                }, 3000);
+            },
+            out: function(e){
+                clearTimeout(primeTimeHoverTimer);
+                $(this).destroyPopover();
+            },
+            selector: '.' + config.systemHeadPrimeTimeClass
+        });
 
         // toggle "fullSize" Endpoint overlays for system (signature information) -------------------------------------
         mapContainer.hoverIntent({

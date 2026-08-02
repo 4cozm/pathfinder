@@ -68,6 +68,13 @@ class Map extends Controller\AccessController {
                 'superEol'  => (int)$f3->get('PATHFINDER.CACHE.EXPIRE_CONNECTIONS_SUPER_EOL')
             ];
 
+            // "prime time" (zKillboard) n -> color scale bounds, used by the client to color the
+            // prime-time bar on occupied/hostile system blocks -----------------------------------
+            $return->primeTime = (object)[
+                'colorFloor'    => (int)$f3->get('PATHFINDER.PRIMETIME.COLOR_SCALE_FLOOR'),
+                'colorCeiling'  => (int)$f3->get('PATHFINDER.PRIMETIME.COLOR_SCALE_CEILING')
+            ];
+
             // get all available map types ----------------------------------------------------------------------------
             $mapType = Pathfinder\AbstractPathfinderModel::getNew('MapTypeModel');
             $rows = $mapType->find('active = 1');

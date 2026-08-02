@@ -1981,6 +1981,87 @@ define([
     };
 
     /**
+     * add a "prime time" (zKillboard derived) tooltip to an element
+     * @param tooltipData {source, owners[], n, activeDays, systemN, systemActiveDays, medianHour, confident, checkedAt}
+     * @param options
+     * @returns {*}
+     */
+    $.fn.addPrimeTimeTooltip = function(tooltipData, options){
+        return this.each(function(){
+            let element = $(this);
+
+            requirejs(['text!templates/tooltip/primetime_info.html', 'mustache'], (template, Mustache) => {
+                // this module load is async and can take a moment on first hover (not yet
+                // cached) -> the mouse may already be gone by the time we get here. Showing
+                // anyway would create an orphaned popover that nothing left hovering will
+                // ever hide (destroyPopover() already ran against an element that had no
+                // popover attached yet)
+                if(!element.is(':hover')){
+                    return;
+                }
+
+                let isCorp = tooltipData.source === 'corp';
+
+                let data = {
+                    isCorp: isCorp,
+                    isSystem: !isCorp,
+                    n: tooltipData.n || 0,
+                    activeDays: tooltipData.activeDays || 0,
+                    systemN: tooltipData.systemN || 0,
+                    systemActiveDays: tooltipData.systemActiveDays || 0,
+                    lowConfidence: !tooltipData.confident,
+                    peakLabel: (tooltipData.medianHour === null || tooltipData.medianHour === undefined) ?
+                        '<span class="txt-color txt-color-grayLight">불명확</span>' :
+                        String(tooltipData.medianHour).padStart(2, '0') + ':00&nbsp;UTC'
+                };
+
+                if(isCorp && Array.isArray(tooltipData.owners) && tooltipData.owners.length){
+                    // owner name/ticker come from zKillboard (untrusted, ultimately CCP corp
+                    // data) and get rendered with {{{ }}} (unescaped) below -> must be
+                    // HTML-encoded here, the wrapping markup itself stays literal
+                    data.ownersLabel = tooltipData.owners.map(owner => {
+                        let label = owner.name ? Util.htmlEncode(owner.name) : ('#' + parseInt(owner.id));
+                        return owner.ticker ? (label + '&nbsp;[' + Util.htmlEncode(owner.ticker) + ']') : label;
+                    }).join(', ');
+                }
+
+                if(tooltipData.checkedAt){
+                    let ageMin = Math.max(0, Math.round((Date.now() / 1000 - tooltipData.checkedAt) / 60));
+                    data.checkedAgo = ageMin < 1 ? '방금' : (ageMin < 60 ? ageMin + '분 전' : Math.round(ageMin / 60) + '시간 전');
+                }else{
+                    data.checkedAgo = '<span class="txt-color txt-color-grayLight">-</span>';
+                }
+
+                let content = Mustache.render(template, data);
+
+                let defaultOptions = {
+                    placement: 'top',
+                    html: true,
+                    trigger: 'manual',
+                    container: 'body',
+                    title: '프라임 타임',
+                    content: ''
+                };
+
+                options = $.extend({}, defaultOptions, options);
+                element.popover(options);
+
+                let popover = element.data('bs.popover');
+                popover.options.title = defaultOptions.title;
+                popover.options.content = content;
+
+                if(options.smaller){
+                    element.setPopoverSmall();
+                }
+
+                if(options.show){
+                    element.popover('show');
+                }
+            });
+        });
+    };
+
+    /**
      *
      * @param container any parent element that holds the event
      * @param selector element that bubbles up hover

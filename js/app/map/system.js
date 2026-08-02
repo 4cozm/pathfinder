@@ -24,6 +24,11 @@ define([
         systemHeadInfoRightClass: 'pf-system-head-info-right',                          // class for right system info
         systemHeadRegionClass: 'pf-system-head-region',                                 // class for "region" in system info
 
+        systemHeadPrimeTimeClass: 'pf-system-head-primetime',                           // class for "prime time" bar wrapper
+        systemHeadPrimeTimeBarClass: 'pf-system-head-primetime-bar',                    // class for a single hour bar
+        systemHeadPrimeTimeMarkerClass: 'pf-system-head-primetime-marker',              // class for the "now" triangle marker
+        systemHeadPrimeTimeWindow: 6,                                                   // hours shown left/right of "now"
+
         systemTooltipInnerIdPrefix: 'pf-system-tooltip-inner-',                         // id prefix for system tooltip content
         systemTooltipInnerClass: 'pf-system-tooltip-inner',                             // class for system tooltip content
 
@@ -763,6 +768,91 @@ define([
     };
 
     /**
+     * n (total kills, lookback window) -> color, log-scaled green (quiet) -> amber -> red (very active)
+     * -> low-confidence samples (too few kills / too few active days) are desaturated toward gray
+     * @param n
+     * @param confident
+     * @returns {string}
+     */
+    let getPrimeTimeColor = (n, confident) => {
+        let floor = Util.getObjVal(Init, 'primeTime.colorFloor') || 15;
+        let ceiling = Util.getObjVal(Init, 'primeTime.colorCeiling') || 500;
+
+        let t = 0;
+        if(n > floor && ceiling > floor){
+            let logN = Math.log10(Math.max(n, floor));
+            let logFloor = Math.log10(floor);
+            let logCeiling = Math.log10(ceiling);
+            t = Math.min(1, Math.max(0, (logN - logFloor) / (logCeiling - logFloor)));
+        }
+
+        // green -> amber -> red, 3-stop interpolation
+        let stops = [[92, 184, 92], [226, 138, 13], [217, 83, 79]];
+        let segment = t <= 0.5 ? 0 : 1;
+        let localT = t <= 0.5 ? (t / 0.5) : ((t - 0.5) / 0.5);
+        let rgb = stops[segment].map((c, i) => Math.round(c + localT * (stops[segment + 1][i] - c)));
+
+        if(!confident){
+            // desaturate toward a neutral gray -> "quiet" vs "not enough data" stay visually distinct
+            let gray = 90;
+            rgb = rgb.map(c => Math.round(c * 0.45 + gray * 0.55));
+        }
+
+        return `rgb(${rgb.join(',')})`;
+    };
+
+    /**
+     * get "prime time" bar element (12 hourly bars, ±systemHeadPrimeTimeWindow around "now",
+     * bar height normalized against the full 24h histogram max so a locally-tall-but-globally-
+     * modest hour never reads as "the" peak) + a small triangle marking "now" below the bars
+     * @param data
+     * @returns {HTMLSpanElement|null}
+     */
+    let getPrimeTimeElement = data => {
+        let primeTime = data.primeTime;
+        if(!primeTime || !Array.isArray(primeTime.histogram) || primeTime.histogram.length !== 24){
+            return null;
+        }
+
+        let histogram = primeTime.histogram;
+        let globalMax = Math.max(...histogram, 1);
+        let nowHour = new Date().getUTCHours();
+        // v2 (corp-based) source reports "systemN" (kills seen in THIS system) separately
+        // from the corp all-time activity volume -> that's still the right number for the
+        // "how hot is this system" color scale, v1 (system-only) just calls it "n"
+        let colorN = (primeTime.systemN !== undefined) ? primeTime.systemN : primeTime.n;
+        let color = getPrimeTimeColor(colorN, primeTime.confident);
+        let window = config.systemHeadPrimeTimeWindow;
+
+        let bars = [];
+        for(let offset = -window; offset <= (window - 1); offset++){
+            let hour = ((nowHour + offset) % 24 + 24) % 24;
+            let heightPct = Math.max(5, Math.round((histogram[hour] || 0) / globalMax * 100));
+            bars.push(Object.assign(document.createElement('span'), {
+                className: config.systemHeadPrimeTimeBarClass
+            }));
+            let bar = bars[bars.length - 1];
+            bar.style.height = heightPct + '%';
+            bar.style.backgroundColor = color;
+        }
+
+        let marker = Object.assign(document.createElement('span'), {
+            className: config.systemHeadPrimeTimeMarkerClass
+        });
+
+        let wrapEl = Object.assign(document.createElement('span'), {
+            className: [config.systemHeadPrimeTimeClass, Util.config.popoverTriggerClass].join(' ')
+        });
+        wrapEl.append(...bars, marker);
+        // full payload for the hover tooltip (source, owners[], n/activeDays or systemN/
+        // systemActiveDays, medianHour, confident, checkedAt) -> too shaped/nested to
+        // sensibly flatten into individual data-* attributes anymore since v2 added owners
+        wrapEl.dataset.primetime = JSON.stringify(primeTime);
+
+        return wrapEl;
+    };
+
+    /**
      * get new dom element for systemData that shows "info" data (additional data)
      * -> this is show below the system base data on map
      * @param data
@@ -772,6 +862,15 @@ define([
         let infoEl;
         let headInfoLeft = [];
         let headInfoRight = [];
+
+        // "prime time" indicator -> only meaningful for confirmed-active (occupied/hostile) systems
+        let statusName = Util.getObjVal(data, 'status.name');
+        if(statusName === 'occupied' || statusName === 'hostile'){
+            let primeTimeEl = getPrimeTimeElement(data);
+            if(primeTimeEl){
+                headInfoLeft.push(primeTimeEl);
+            }
+        }
 
         if(data.drifter){
             headInfoLeft.push(Object.assign(document.createElement('i'), {
@@ -831,10 +930,38 @@ define([
         return infoEl;
     };
 
+    /**
+     * (re)build the "prime time" bar for an existing system DOM element
+     * -> called on every system data refresh (not just creation!) because the bar
+     *    shows a window relative to "now", which keeps moving even when nothing
+     *    about the system itself has changed
+     * @param systemEl jQuery system element
+     * @param data systemData
+     */
+    let updatePrimeTime = (systemEl, data) => {
+        let existingEl = systemEl.find('.' + config.systemHeadPrimeTimeClass);
+        let statusName = Util.getObjVal(data, 'status.name');
+        let newEl = (statusName === 'occupied' || statusName === 'hostile') ? getPrimeTimeElement(data) : null;
+
+        if(newEl){
+            if(existingEl.length){
+                existingEl.replaceWith(newEl);
+            }else{
+                let infoLeft = systemEl.find('.' + config.systemHeadInfoLeftClass);
+                if(infoLeft.length){
+                    infoLeft.prepend(newEl);
+                }
+            }
+        }else if(existingEl.length){
+            existingEl.remove();
+        }
+    };
+
     return {
         showNewSystemDialog: showNewSystemDialog,
         deleteSystems: deleteSystems,
         removeSystems: removeSystems,
-        getHeadInfoElement: getHeadInfoElement
+        getHeadInfoElement: getHeadInfoElement,
+        updatePrimeTime: updatePrimeTime
     };
 });

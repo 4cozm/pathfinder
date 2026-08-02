@@ -1,0 +1,38 @@
+<table>
+    {{#isCorp}}
+    <tr>
+        <td>주인</td>
+        <td class="text-right">{{{ownersLabel}}}</td>
+    </tr>
+    {{/isCorp}}
+    <tr>
+        <td>피크 시간</td>
+        <td class="text-right">{{{peakLabel}}}</td>
+    </tr>
+    {{#isCorp}}
+    <tr>
+        <td colspan="2" class="text-right">
+            <span class="txt-color txt-color-grayLight">corp 활동 기준 (all-time)</span>
+        </td>
+    </tr>
+    <tr>
+        <td>이 성계 30일</td>
+        <td class="text-right">킬 {{systemN}}건 · {{systemActiveDays}}일</td>
+    </tr>
+    {{/isCorp}}
+    {{#isSystem}}
+    <tr>
+        <td>최근 30일</td>
+        <td class="text-right">킬 {{n}}건 · {{activeDays}}일</td>
+    </tr>
+    {{#lowConfidence}}
+    <tr>
+        <td colspan="2" class="text-right"><span class="txt-color txt-color-warning">표본 부족 - 추정 낮음</span></td>
+    </tr>
+    {{/lowConfidence}}
+    {{/isSystem}}
+    <tr>
+        <td>갱신</td>
+        <td class="text-right">{{{checkedAgo}}}</td>
+    </tr>
+</table>

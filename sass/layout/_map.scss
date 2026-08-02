@@ -428,6 +428,40 @@ $mapBubbleWidth:        30px;
       }
     }
 
+    // "prime time" (zKillboard) bar -> 12 hourly bars (±6h around "now"), a small triangle
+    // below the baseline marks "now" itself. The marker sits BELOW the bars on purpose:
+    // a line drawn over/through the bars either hides data or gets hidden by it depending
+    // on z-order, and thin (sub-pixel) overlay lines anti-alias into a blurry smear at this
+    // size. Living entirely in its own space below the baseline sidesteps both problems.
+    .pf-system-head-primetime{
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 1px;
+      position: relative;
+      height: 8px;
+      align-self: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      cursor: help;
+
+      .pf-system-head-primetime-bar{
+        display: inline-block;
+        width: 3px;
+        flex: 0 0 auto;
+      }
+
+      .pf-system-head-primetime-marker{
+        position: absolute;
+        left: 50%;
+        bottom: -6px;
+        width: 0;
+        height: 0;
+        border-left: 3px solid transparent;
+        border-right: 3px solid transparent;
+        border-bottom: 4px solid $gray-lighter;
+        transform: translateX(-50%);
+      }
+    }
+
     .pf-system-head-info-right {
       justify-content: flex-end;
 
