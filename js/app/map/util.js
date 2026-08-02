@@ -1982,8 +1982,10 @@ define([
 
     /**
      * add a "prime time" (zKillboard derived) tooltip to an element
-     * @param tooltipData {source, owners[], n, activeDays, systemN, systemActiveDays, medianHour, confident, checkedAt}
-     * @param options
+     * @param tooltipData {source, owners[], n, activeDays, systemN, systemActiveDays, corpActivityTotal, medianHour, confident, checkedAt}
+     * @param options {..., hoverBridge, onTipEnter, onTipLeave} hoverBridge wires mouseenter/mouseleave
+     *        on the rendered tip element (not "element" itself, the tip lives under <body>) to the
+     *        onTipEnter/onTipLeave callbacks -> lets a caller keep the popover open while it's hovered
      * @returns {*}
      */
     $.fn.addPrimeTimeTooltip = function(tooltipData, options){
@@ -2009,10 +2011,13 @@ define([
                     activeDays: tooltipData.activeDays || 0,
                     systemN: tooltipData.systemN || 0,
                     systemActiveDays: tooltipData.systemActiveDays || 0,
+                    corpActivityTotal: tooltipData.corpActivityTotal || 0,
                     lowConfidence: !tooltipData.confident,
+                    // medianHour is computed server-side in UTC (killmail_time) -> convert to
+                    // KST (UTC+9, no DST) for display, that's what the target audience reads in
                     peakLabel: (tooltipData.medianHour === null || tooltipData.medianHour === undefined) ?
                         '<span class="txt-color txt-color-grayLight">불명확</span>' :
-                        String(tooltipData.medianHour).padStart(2, '0') + ':00&nbsp;UTC'
+                        (((tooltipData.medianHour + 9) % 24) + '시&nbsp;한국시간')
                 };
 
                 if(isCorp && Array.isArray(tooltipData.owners) && tooltipData.owners.length){
@@ -2021,7 +2026,15 @@ define([
                     // HTML-encoded here, the wrapping markup itself stays literal
                     data.ownersLabel = tooltipData.owners.map(owner => {
                         let label = owner.name ? Util.htmlEncode(owner.name) : ('#' + parseInt(owner.id));
-                        return owner.ticker ? (label + '&nbsp;[' + Util.htmlEncode(owner.ticker) + ']') : label;
+                        if(owner.ticker){
+                            label += '&nbsp;[' + Util.htmlEncode(owner.ticker) + ']';
+                        }
+                        if(owner.id){
+                            // clicking an owner jumps to their zKillboard corp page
+                            label = '<a href="https://zkillboard.com/corporation/' + parseInt(owner.id) +
+                                '/" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+                        }
+                        return label;
                     }).join(', ');
                 }
 
@@ -2056,6 +2069,25 @@ define([
 
                 if(options.show){
                     element.popover('show');
+                }
+
+                if(options.hoverBridge){
+                    // the popover tip renders into <body> (container: 'body'), i.e. it's not
+                    // a descendant of "element" -> the caller's own hover tracking on "element"
+                    // can't see the mouse move into it. Bridge that here so hovering the tip
+                    // itself (e.g. to select/copy its text) keeps it open instead of the
+                    // caller's leave-timer tearing it down out from under the cursor.
+                    let tip = popover.tip().addClass('pf-popover-primetime');
+                    let ns = '.primeTimeTooltip';
+                    tip.off(ns).on('mouseenter' + ns, () => {
+                        if(typeof options.onTipEnter === 'function'){
+                            options.onTipEnter();
+                        }
+                    }).on('mouseleave' + ns, () => {
+                        if(typeof options.onTipLeave === 'function'){
+                            options.onTipLeave();
+                        }
+                    });
                 }
             });
         });

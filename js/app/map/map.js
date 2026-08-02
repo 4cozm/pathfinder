@@ -2961,13 +2961,42 @@ define([
         );
 
         // system "prime time" popover --------------------------------------------------------------------------------
-        // -> deliberately slow (3s hold), unlike the other at-a-glance tooltips above:
-        //    this is supplementary detail, the bar itself already shows the gist
-        let primeTimeHoverTimer = null;
+        // -> slight hold before showing (1s), unlike the other at-a-glance tooltips above:
+        //    this is supplementary detail, the bar itself already shows the gist.
+        //    Closing is on a short grace timer (not immediate) and bridged to the popover's
+        //    own tip element (addPrimeTimeTooltip's hoverBridge) -> moving the mouse from the
+        //    bar into the tip itself (e.g. to select/copy text) keeps it open. Race-condition
+        //    note: EVERY path that can end a hover (bar leave, tip leave) always (re)schedules
+        //    the same close timer rather than skipping it, so there's no state where the mouse
+        //    is fully outside both elements yet nothing is left to close it.
+        let primeTimeShowTimer = null;
+        let primeTimeCloseTimer = null;
+        let clearPrimeTimeCloseTimer = () => {
+            if(primeTimeCloseTimer){
+                clearTimeout(primeTimeCloseTimer);
+                primeTimeCloseTimer = null;
+            }
+        };
+        let schedulePrimeTimeClose = trigger => {
+            clearPrimeTimeCloseTimer();
+            primeTimeCloseTimer = setTimeout(() => {
+                trigger.destroyPopover();
+            }, 300);
+        };
         mapContainer.hoverIntent({
             over: function(e){
                 let el = $(this);
-                primeTimeHoverTimer = setTimeout(() => {
+                clearPrimeTimeCloseTimer();
+
+                let existingPopover = el.data('bs.popover');
+                if(existingPopover && existingPopover.tip().is(':visible')){
+                    // already open (mouse briefly left and came back to the bar) -> just
+                    // cancelling the close above is enough, don't restart the show delay
+                    return;
+                }
+
+                clearTimeout(primeTimeShowTimer);
+                primeTimeShowTimer = setTimeout(() => {
                     let primeTime = null;
                     try{
                         primeTime = JSON.parse(el.attr('data-primetime'));
@@ -2985,13 +3014,16 @@ define([
                         trigger: 'manual',
                         placement: 'top',
                         smaller: true,
-                        show: true
+                        show: true,
+                        hoverBridge: true,
+                        onTipEnter: () => clearPrimeTimeCloseTimer(),
+                        onTipLeave: () => schedulePrimeTimeClose(el)
                     });
-                }, 3000);
+                }, 1000);
             },
             out: function(e){
-                clearTimeout(primeTimeHoverTimer);
-                $(this).destroyPopover();
+                clearTimeout(primeTimeShowTimer);
+                schedulePrimeTimeClose($(this));
             },
             selector: '.' + config.systemHeadPrimeTimeClass
         });

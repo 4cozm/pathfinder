@@ -148,6 +148,19 @@
   }
 }
 
+// "prime time" (zKillboard) popover ------------------------------------------------------------------------------------
+.pf-popover-primetime{
+  // body{} disables selection globally (drag/map UX) -> this popover's whole point is
+  // numbers/owner names people want to copy, so opt back in
+  -moz-user-select: text;
+  user-select: text;
+
+  a{
+    -moz-user-select: text;
+    user-select: text;
+  }
+}
+
 // character popover --------------------------------------------------------------------------------------------------
 .pf-popover-character{
   .table>tbody>tr>td{

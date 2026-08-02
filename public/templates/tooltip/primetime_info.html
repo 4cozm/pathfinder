@@ -11,13 +11,12 @@
     </tr>
     {{#isCorp}}
     <tr>
-        <td colspan="2" class="text-right">
-            <span class="txt-color txt-color-grayLight">corp 활동 기준 (all-time)</span>
-        </td>
+        <td>이 웜홀 30일</td>
+        <td class="text-right">킬 {{systemN}}건 · {{systemActiveDays}}일</td>
     </tr>
     <tr>
-        <td>이 성계 30일</td>
-        <td class="text-right">킬 {{systemN}}건 · {{systemActiveDays}}일</td>
+        <td>주인 활성도<br>(all-time)</td>
+        <td class="text-right">킬 {{corpActivityTotal}}건</td>
     </tr>
     {{/isCorp}}
     {{#isSystem}}

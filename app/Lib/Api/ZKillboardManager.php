@@ -265,6 +265,11 @@ class ZKillboardManager extends \Prefab {
             'owners' => $ownersOut,
             'medianHour' => $medianHour,
             'histogram' => array_values($histogram),
+            // sum of the merged all-time weekday x hour matrix -> total recorded kills+losses
+            // across the owner corp(s)' entire zKillboard history, not just this system/window.
+            // Surfaced in the tooltip as a "how active/dangerous is this corp in general" figure,
+            // separate from systemN/systemActiveDays (which are scoped to just this system+30d).
+            'corpActivityTotal' => array_sum($histogram),
             'confident' => true, // owner identification (day-count + ratio gate) IS the confidence check
         ];
     }
