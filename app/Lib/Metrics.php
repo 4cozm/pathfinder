@@ -92,7 +92,7 @@ class Metrics {
                 try {
                     if($redis->pconnect(
                         Config::getEnvironmentData('REDIS_HOST'),
-                        Config::getEnvironmentData('REDIS_PORT') ? : 6379,
+                        (int)(Config::getEnvironmentData('REDIS_PORT') ? : 6379),
                         Config::REDIS_OPT_TIMEOUT
                     )){
                         if($auth = Config::getEnvironmentData('REDIS_AUTH')){
