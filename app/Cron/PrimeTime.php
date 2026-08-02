@@ -8,8 +8,15 @@ use Exodus4D\Pathfinder\Controller\LogController;
 
 /**
  * derives a "prime time" indicator (zKillboard killmail history) for occupied/hostile
- * systems. Runs off the standalone daemon loop, NOT the request/response cycle -> a
- * zKillboard outage must never be able to slow down or block system create/update.
+ * systems. Picked up by the existing once-a-minute "php index.php /cron" crontab
+ * (already baked into the pf image, reads cron.ini) -> NOT the persistent standalone
+ * daemon loop. That loop shares one long-lived DB connection across every tick, and
+ * running this here empirically left real-table SELECTs silently returning empty
+ * results right after the tracking job's own queries on the same connection/process
+ * (root cause not fully isolated -> likely an unbuffered-query/cursor state issue).
+ * The per-minute crontab gives every run a fresh PHP process/connection, which sidesteps
+ * that entirely, and a zKillboard outage still can't affect the site since this only
+ * ever runs from a throwaway CLI process, never inside a real request.
  */
 class PrimeTime extends AbstractCron {
 

@@ -4,7 +4,6 @@ namespace Exodus4D\Pathfinder;
 
 use Exodus4D\Pathfinder\Lib;
 use Exodus4D\Pathfinder\Cron\CharacterUpdate;
-use Exodus4D\Pathfinder\Cron\PrimeTime;
 use Exodus4D\Pathfinder\Lib\Api\BackpressureManager;
 
 session_name('pathfinder_session');
@@ -122,13 +121,8 @@ $interval = (int)($argv[1] ?? 10);
 $interval = max(5, $interval);
 
 $job = new CharacterUpdate();
-$primeTimeJob = new PrimeTime();
 $lastJobRun = 0;
 $lastPressureUpdate = 0;
-$lastPrimeTimeRun = 0;
-// zKillboard sweep runs far less often than the tracking tick -> it's an external
-// 3rd-party API on a 7-day refresh cycle, not something that needs 10s freshness
-$primeTimeInterval = 60;
 
 error_log('[standalone-daemon] Starting loop with backpressure support');
 
@@ -212,18 +206,6 @@ while (true) {
         } catch (\Throwable $e) {
             error_log('[standalone-daemon][EXCEPTION] ' . $e->getMessage());
         }
-    }
-
-    // 3. Sweep zKillboard prime-time data every $primeTimeInterval seconds
-    //    -> isolated try/catch: an outage here must never affect the tracking
-    //       tick or the heartbeat above
-    if ($now - $lastPrimeTimeRun >= $primeTimeInterval) {
-        try {
-            $primeTimeJob->sweepPrimeTimes($f3);
-        } catch (\Throwable $e) {
-            error_log('[standalone-daemon][PrimeTime] sweep failed: ' . $e->getMessage());
-        }
-        $lastPrimeTimeRun = $now;
     }
 
     // High frequency sleep for multi-timer support

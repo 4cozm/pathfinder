@@ -24,12 +24,11 @@ use Exodus4D\Pathfinder\Controller\LogController;
 class ZKillboardManager extends \Prefab {
 
     /**
-     * kept low deliberately: this all runs inline in the standalone daemon's single-
-     * threaded loop (shared with character tracking), which has a 120s healthcheck
-     * budget. A worst-case sweep (3 months x MAX_PAGES_PER_MONTH pages + OWNER_MAX_CORPS
-     * stats calls, all timing out) must stay comfortably under that even at
-     * SWEEP_BATCH_SIZE=1, or a merely-slow (not down) zKillboard causes autoheal to
-     * restart the daemon and interrupt tracking.
+     * kept low deliberately: sweepPrimeTimes() runs from the once-a-minute cron
+     * (fresh CLI process each time, see PrimeTime.php docblock for why it's not the
+     * standalone daemon), which has AbstractCron::DEFAULT_MAX_EXECUTION_TIME (50s) to
+     * work with. A worst-case sweep (3 months x MAX_PAGES_PER_MONTH pages +
+     * OWNER_MAX_CORPS stats calls, all timing out) must stay comfortably under that.
      */
     const REQUEST_TIMEOUT = 4;
 
