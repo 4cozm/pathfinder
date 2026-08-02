@@ -61,6 +61,19 @@ class PrimeTime extends AbstractCron {
                     try {
                         $system->getById((int)$data['id']);
                         if($system->valid()){
+                            // AbstractMapTrackingModel::save($characterModel = null) always
+                            // OVERWRITES updatedCharacterId with whatever gets passed in
+                            // (null if omitted) -> since that field is 'validate' => 'notDry',
+                            // a plain save() on a system-driven background job wipes a
+                            // perfectly valid existing value and then fails its own
+                            // validation. There's no "acting character" for this job, so the
+                            // only correct move is to read back whoever last touched the row
+                            // and hand that same character right back in.
+                            $actingCharacter = $system->updatedCharacterId;
+                            if(!($actingCharacter instanceof Pathfinder\CharacterModel) || $actingCharacter->dry()){
+                                $actingCharacter = null;
+                            }
+
                             $primeTime = $manager->fetchPrimeTime((int)$data['systemId'], $f3);
                             if(!is_null($primeTime)){
                                 $encoded = json_encode($primeTime, JSON_INVALID_UTF8_SUBSTITUTE);
@@ -69,7 +82,7 @@ class PrimeTime extends AbstractCron {
                                     $system->setActivityLogging(false);
                                     $system->zkbCheckedAt = date('Y-m-d H:i:s');
                                     $system->zkbData = $encoded;
-                                    $system->save();
+                                    $system->save($actingCharacter);
                                     $count++;
                                 }
                                 // encode failure -> zkbCheckedAt stays untouched, same as a fetch failure
@@ -85,7 +98,7 @@ class PrimeTime extends AbstractCron {
                                 $cooldownSeconds = max(0, $refreshInterval - $backoffSeconds);
                                 $system->setActivityLogging(false);
                                 $system->zkbCheckedAt = date('Y-m-d H:i:s', time() - $cooldownSeconds);
-                                $system->save();
+                                $system->save($actingCharacter);
                                 $system->reset();
                                 // we're rate limited right now -> any other candidate in this
                                 // batch would just hit the same 429 immediately. SWEEP_BATCH_SIZE
