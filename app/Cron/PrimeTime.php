@@ -41,6 +41,12 @@ class PrimeTime extends AbstractCron {
         $refreshInterval = (int)$f3->get('PATHFINDER.PRIMETIME.REFRESH_INTERVAL') ?: 604800;
 
         if($pfDB = $f3->DB->getDB('PF')){
+            // LIMIT can't be a bound parameter here: Pathfinder never sets
+            // PDO::ATTR_EMULATE_PREPARES = false, so PDO's default emulated-prepare
+            // mode renders a bound :batchSize as a quoted string ("LIMIT '1'").
+            // MariaDB accepts that silently (no error) and just returns zero rows ->
+            // confirmed directly against prod (0 rows bound vs 1 row inlined, same
+            // WHERE clause). Inline it as a validated int instead.
             $sql = "SELECT
                     `sys`.`id`, `sys`.`systemId`
                 FROM
@@ -51,13 +57,12 @@ class PrimeTime extends AbstractCron {
                     (`sys`.`zkbCheckedAt` IS NULL OR TIMESTAMPDIFF(SECOND, `sys`.`zkbCheckedAt`, NOW()) > :refreshInterval)
                 ORDER BY
                     `sys`.`zkbCheckedAt` IS NULL DESC, `sys`.`zkbCheckedAt` ASC
-                LIMIT :batchSize";
+                LIMIT " . max(1, $batchSize);
 
             $candidates = $pfDB->exec($sql, [
                 ':occupied' => self::STATUS_ID_OCCUPIED,
                 ':hostile' => self::STATUS_ID_HOSTILE,
-                ':refreshInterval' => $refreshInterval,
-                ':batchSize' => $batchSize
+                ':refreshInterval' => $refreshInterval
             ]);
 
             if($candidates){
