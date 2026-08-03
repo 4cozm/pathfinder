@@ -15,9 +15,13 @@ use Exodus4D\Pathfinder\Controller\LogController;
  * v2 instead: (1) use the system's own 30d killmails only to figure out WHO lives there
  * (ranked by distinct active days, not raw kill count -> a single big fight can only ever
  * contribute ONE day, so it can't fake residency), then (2) pull each identified owner
- * corp's OWN all-time zKillboard activity stats (their fights anywhere, not just here) and
- * derive prime time from THAT. Falls back to the v1 system-only computation if no corp
- * can be confidently identified as a resident.
+ * corp's OWN zKillboard activity stats (their fights anywhere, not just here) and derive
+ * prime time from THAT. zKillboard's stats endpoint only exposes a rolling last-90-days
+ * activity matrix, not true all-time data (confirmed against zkillboard.com's own corp
+ * page, which labels the identical heatmap "Activity (last 90 days)") -> still strictly
+ * better signal than the system's own 30d window since it's corp-wide, just not the years
+ * of history earlier revisions of this comment assumed. Falls back to the v1 system-only
+ * computation if no corp can be confidently identified as a resident.
  *
  * zKillboard has no official ESI-client package -> plain cURL, no auth, fair-use UA required.
  */
@@ -200,11 +204,11 @@ class ZKillboardManager extends \Prefab {
     }
 
     /**
-     * fetch each owner corp's all-time zKillboard activity matrix (7 weekdays x 24 hours,
-     * server-side pre-aggregated by zKillboard over the corp's ENTIRE killboard history),
-     * sum them elementwise, then take the median of the 7 weekday peak hours -> same
-     * "resist a single outlier" idea as v1's daily-peak median, just over years of data
-     * instead of 30 days.
+     * fetch each owner corp's zKillboard activity matrix (7 weekdays x 24 hours,
+     * server-side pre-aggregated by zKillboard over the corp's last 90 days, NOT its
+     * entire history -> see class docblock), sum them elementwise, then take the median
+     * of the 7 weekday peak hours -> same "resist a single outlier" idea as v1's
+     * daily-peak median, just over a corp-wide 90d window instead of this system's own 30d.
      * @param array $owners from identifyOwnerCorps()
      * @return array|null null if every owner corp's stats call failed
      */
@@ -265,9 +269,9 @@ class ZKillboardManager extends \Prefab {
             'owners' => $ownersOut,
             'medianHour' => $medianHour,
             'histogram' => array_values($histogram),
-            // sum of the merged all-time weekday x hour matrix -> total recorded kills+losses
-            // across the owner corp(s)' entire zKillboard history, not just this system/window.
-            // Surfaced in the tooltip as a "how active/dangerous is this corp in general" figure,
+            // sum of the merged weekday x hour matrix -> total recorded kills+losses across
+            // the owner corp(s)' last 90 days (zKillboard-wide, not just this system).
+            // Surfaced in the tooltip as a "how active/dangerous is this corp lately" figure,
             // separate from systemN/systemActiveDays (which are scoped to just this system+30d).
             'corpActivityTotal' => array_sum($histogram),
             'confident' => true, // owner identification (day-count + ratio gate) IS the confidence check

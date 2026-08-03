@@ -6,7 +6,7 @@
     </tr>
     {{/isCorp}}
     <tr>
-        <td>피크 시간</td>
+        <td>피크 시간{{#isCorp}}<br><span class="txt-color txt-color-grayLight">(주인 최근 90일)</span>{{/isCorp}}</td>
         <td class="text-right">{{{peakLabel}}}</td>
     </tr>
     {{#isCorp}}
@@ -15,7 +15,7 @@
         <td class="text-right">킬 {{systemN}}건 · {{systemActiveDays}}일</td>
     </tr>
     <tr>
-        <td>주인 활성도<br>(all-time)</td>
+        <td>주인 활성도<br>(최근 90일)</td>
         <td class="text-right">킬메일 {{{corpActivityLabel}}}</td>
     </tr>
     {{/isCorp}}

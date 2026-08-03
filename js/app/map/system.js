@@ -818,8 +818,8 @@ define([
         let globalMax = Math.max(...histogram, 1);
         let nowHour = new Date().getUTCHours();
         // v2 (corp-based) source reports "systemN" (kills seen in THIS system) separately
-        // from the corp all-time activity volume -> that's still the right number for the
-        // "how hot is this system" color scale, v1 (system-only) just calls it "n"
+        // from the corp's last-90-days activity volume -> that's still the right number for
+        // the "how hot is this system" color scale, v1 (system-only) just calls it "n"
         let colorN = (primeTime.systemN !== undefined) ? primeTime.systemN : primeTime.n;
         let color = getPrimeTimeColor(colorN, primeTime.confident);
         let window = config.systemHeadPrimeTimeWindow;
