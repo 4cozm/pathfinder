@@ -658,16 +658,29 @@ define([
                                 tSet: BaseModule.now(),
                                 value: Array.isArray(payload.data) ? payload.data : []
                             };
+                            // 저장이 실패해도 받아온 데이터는 그대로 쓴다.
+                            // -> resolve() 에 도달하지 못하면 이 Promise 는 영구 pending 이 되고,
+                            //    그 틱의 테이블 갱신이 아무 흔적 없이 죽는다.
                             this.getLocalStore().setItem('eveScout', cacheEntry)
-                                .then(cacheEntry => resolve(cacheEntry.value));
+                                .then(stored => resolve(stored.value))
+                                .catch(() => resolve(cacheEntry.value));
                         }).catch(payload => {
-                            let reason = payload.data.status + ' ' + payload.data.error;
+                            // 먼저 resolve 한다. 예전 코드는 payload.data 가 undefined 일 때
+                            // payload.data.jqXHR 에서 TypeError 를 던져 resolve 에 도달하지 못했고,
+                            // 그 결과 이 Promise 가 영구 pending 으로 남았다.
+                            resolve([]);
+
+                            let status = BaseModule.Util.getObjVal(payload, 'data.jqXHR.status') || 'Error';
+                            let reason = [
+                                BaseModule.Util.getObjVal(payload, 'data.status'),
+                                BaseModule.Util.getObjVal(payload, 'data.error')
+                            ].filter(Boolean).join(' ');
+
                             this.showNotify({
-                                title: payload.data.jqXHR.status + ': Thera connections data',
+                                title: status + ': Thera connections data',
                                 text: reason,
                                 type: 'warning'
                             });
-                            resolve([]);
                         });
                     }
                 }))
