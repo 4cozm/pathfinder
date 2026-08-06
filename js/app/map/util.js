@@ -565,7 +565,11 @@ define([
                 }
             }
             // ... build unique hash
-            signatureTypeData.hash = hash.join().hashCode();
+            // sort() 필수: connectionData.signatures 의 배열 순서는 보장되지 않는다
+            // (ConnectionModel::getSignatures() 의 filter 에 ORDER BY 가 없다).
+            // 정렬하지 않으면 내용이 완전히 동일한데도 순서만 뒤바뀌어 해시가 달라지고,
+            // 이 해시를 변경 감지에 쓰는 Thera 모듈이 매 폴링 틱마다 "changed" 로 오판한다.
+            signatureTypeData.hash = hash.sort().join().hashCode();
         }
 
         return signatureTypeData;
