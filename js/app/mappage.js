@@ -601,7 +601,16 @@ define([
                     // (파일럿을 그리려는 시점에 시스템 노드가 아직 없어 조용히 버려짐).
                     let mapDataUpdated = Promise.resolve();
                     if(data.mapData !== undefined){
-                        Util.setCurrentMapData(data.mapData);
+                        // updateUserData 응답의 mapData 는 "활성 맵 1개"만 담는다(Api/Map.php updateUserData).
+                        // setCurrentMapData() 는 배열 전체를 교체하므로, 맵 탭이 2개 이상이면 나머지 맵의
+                        // 캐시가 통째로 사라졌다가 다음 map 폴링에서 되살아난다. 그 사이 해당 맵의 모듈들은
+                        // getCurrentMapData(mapId) 가 undefined 라 갱신을 통째로 건너뛴다.
+                        // -> 소켓 경로(updateCurrentMapData)와 같은 "머지" 시맨틱으로 맞춘다.
+                        if(Util.getCurrentMapData()){
+                            data.mapData.forEach(mapData => Util.updateCurrentMapData(mapData));
+                        }else{
+                            Util.setCurrentMapData(data.mapData);
+                        }
                         mapDataUpdated = ModuleMap.updateMapModule(mapModule);
                     }
 
