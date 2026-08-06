@@ -14,6 +14,11 @@ class SystemThera extends AbstractRestController {
     const CACHE_KEY_THERA_CONNECTIONS               = 'CACHED_THERA_CONNECTIONS';
 
     /**
+     * cache time (seconds) for an empty/failed eve-scout response
+     */
+    const CACHE_TTL_EMPTY_RESPONSE                  = 15;
+
+    /**
      * get Thera connections data from Eve-Scout
      * @param \Base $f3
      */
@@ -21,6 +26,15 @@ class SystemThera extends AbstractRestController {
         $ttl = 60 * 3;
         if(!$exists = $f3->exists(self::CACHE_KEY_THERA_CONNECTIONS, $connectionsData)){
             $connectionsData = $this->getEveScoutTheraConnections();
+
+            // eve-scout 호출 실패/빈 응답을 정상 결과와 똑같이 3분 캐시하면,
+            // 클라이언트 테이블의 eve-scout 행이 통째로 지워졌다가 캐시 만료 후 되살아나면서
+            // "N deleted" / "N added" 알림이 몇 분 주기로 무한 반복된다.
+            // -> 빈 결과는 짧게만 캐시해서 곧바로 재시도한다.
+            if(empty($connectionsData)){
+                $ttl = self::CACHE_TTL_EMPTY_RESPONSE;
+            }
+
             $f3->set(self::CACHE_KEY_THERA_CONNECTIONS, $connectionsData, $ttl);
         }
 
@@ -74,7 +88,13 @@ class SystemThera extends AbstractRestController {
             if($key == 'sourceSignature' && $eveScoutConnection['wh_exits_outward']) {
                 $signatureData['type'] = ['name' => strtoupper((string)$eveScoutConnection['wh_type'])];
             }
-            if($key == 'targetSignature' && !$eveScoutConnection['wh_exits_outware']) {
+            // 예전 코드는 'wh_exits_outware' (오타) 를 봤다. Mapper 는 매핑된 키만 남기므로
+            // 그 키는 존재한 적이 없고, !null == true 라서 targetSignature 에 wh_type 이 무조건
+            // 붙었다. 커넥션마다 PHP notice 도 났다.
+            // 표시상의 변화는 wh_exits_outward 가 true 인 행에서 target 쪽 시그니처 셀의 웜홀
+            // 타입 표시가 사라지는 것 하나뿐이다(반대편은 K162 이므로 그게 맞다).
+            // JS 의 whLabel 은 sourceSignature -> targetSignature 순으로 고르므로 값이 바뀌지 않는다.
+            if($key == 'targetSignature' && !$eveScoutConnection['wh_exits_outward']) {
                 $signatureData['type'] = ['name' => strtoupper((string)$eveScoutConnection['wh_type'])];
             }
             $connectionData[$key] = $signatureData;
